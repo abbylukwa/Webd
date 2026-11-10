@@ -16,7 +16,7 @@ import { LAYOUTS, specSummary } from '@/lib/beast/layouts';
 import { LIBRARY } from '@/lib/beast/knowledge';
 import {
   Download, Trash2, Eye, FastForward, Package, Github, Keyboard, Ruler, Palette as PaletteIcon,
-  Layers, Infinity as InfinityIcon, BookOpen, ShieldCheck, MonitorSmartphone,
+  Layers, Infinity as InfinityIcon, BookOpen, ShieldCheck, MonitorSmartphone, FlaskConical,
 } from 'lucide-react';
 
 /* ---------- types (mirror of API) ---------- */
@@ -38,6 +38,8 @@ type Status = {
   day: number; owner: string; concurrency: number; stages: Stage[]; devices: Device[];
   sites: Site[]; log: { day: number; date: string; jobs: string[] }[];
 };
+type TestResult = { id: string; group: string; feature: string; pass: boolean; detail: string };
+type TestReport = { results: TestResult[]; passCount: number; failCount: number; durationMs: number };
 
 /* ---------- tiny building blocks ---------- */
 function Mono({ children, className = '' }: { children: React.ReactNode; className?: string }) {
@@ -160,6 +162,8 @@ export default function BeastPage() {
   const [ownerDraft, setOwnerDraft] = useState('');
   const [previewSite, setPreviewSite] = useState<Site | null>(null);
   const [deviceIdx, setDeviceIdx] = useState(2); // default Laptop
+  const [testReport, setTestReport] = useState<TestReport | null>(null);
+  const [testing, setTesting] = useState(false);
   const { toast } = useToast();
 
   const refresh = useCallback(async () => {
@@ -189,6 +193,23 @@ export default function BeastPage() {
       toast({ title: 'Action failed', variant: 'destructive' });
     } finally {
       setBusy(false);
+    }
+  };
+
+  const runTests = async () => {
+    setTesting(true);
+    try {
+      const res = await fetch('/api/beast/test', { cache: 'no-store' });
+      const data = (await res.json()) as TestReport;
+      setTestReport(data);
+      toast({
+        title: data.failCount === 0 ? `All ${data.passCount} features verified ✅` : `${data.failCount} of ${data.results.length} checks failed`,
+        variant: data.failCount === 0 ? 'default' : 'destructive',
+      });
+    } catch {
+      toast({ title: 'Test run failed', variant: 'destructive' });
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -275,6 +296,7 @@ export default function BeastPage() {
             <TabsTrigger value="studio" className="gap-1.5 data-[state=active]:bg-lime-300 data-[state=active]:text-zinc-950"><MonitorSmartphone className="h-4 w-4" /> Studio</TabsTrigger>
             <TabsTrigger value="blueprints" className="gap-1.5 data-[state=active]:bg-lime-300 data-[state=active]:text-zinc-950"><Ruler className="h-4 w-4" /> Blueprints · D1–D5</TabsTrigger>
             <TabsTrigger value="knowledge" className="gap-1.5 data-[state=active]:bg-lime-300 data-[state=active]:text-zinc-950"><BookOpen className="h-4 w-4" /> Knowledge</TabsTrigger>
+            <TabsTrigger value="tests" className="gap-1.5 data-[state=active]:bg-lime-300 data-[state=active]:text-zinc-950"><FlaskConical className="h-4 w-4" /> Test Center</TabsTrigger>
           </TabsList>
 
           {/* ================= STUDIO ================= */}
@@ -528,6 +550,66 @@ export default function BeastPage() {
                 <p>4. Clear the workspace; the next work day starts fresh commissions. The queue never empties.</p>
               </CardContent>
             </Card>
+          </TabsContent>
+          {/* ================= TEST CENTER ================= */}
+          <TabsContent value="tests" className="space-y-6">
+            <Card className="border-zinc-800 bg-zinc-900/60">
+              <CardHeader className="flex-row items-start justify-between space-y-0">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-lg"><FlaskConical className="h-5 w-5 text-lime-300" /> Feature-by-feature verification</CardTitle>
+                  <p className="mt-1 text-sm text-zinc-400">
+                    The whole beast, tested: generator determinism, the D1–D5 structural breakpoint law, WCAG contrast (light <em>and</em> dark),
+                    © injection, uniqueness, motifs, accessibility, the layout book, and the full daily engine — run against a throwaway sandbox,
+                    never touching the live studio. The same suite ships as <span className="font-mono text-[12px] text-lime-300/80">scripts/test-beast.ts</span>.
+                  </p>
+                </div>
+                <Button size="sm" className="shrink-0 bg-lime-300 font-bold text-zinc-950 hover:bg-lime-200" disabled={testing} onClick={runTests}>
+                  <FlaskConical className="h-4 w-4" /> {testing ? 'Testing…' : 'Run all feature tests'}
+                </Button>
+              </CardHeader>
+              {testReport && (
+                <CardContent className="grid gap-3 md:grid-cols-3">
+                  <div className={`rounded-lg border p-3 ${testReport.failCount === 0 ? 'border-lime-300/40 bg-lime-300/5' : 'border-red-500/40 bg-red-500/5'}`}>
+                    <div className={`text-3xl font-black ${testReport.failCount === 0 ? 'text-lime-300' : 'text-red-400'}`}>
+                      {testReport.passCount}/{testReport.results.length}
+                    </div>
+                    <p className="mt-1 text-sm text-zinc-400">{testReport.failCount === 0 ? 'every feature verified' : `${testReport.failCount} features failing`} · {testReport.durationMs}ms</p>
+                  </div>
+                  {['A · Generator', 'B · Design knowledge', 'C · Engine (sandboxed)'].map((g) => {
+                    const rs = testReport.results.filter((r) => r.group === g);
+                    const p = rs.filter((r) => r.pass).length;
+                    return (
+                      <div key={g} className="rounded-lg border border-zinc-800 bg-zinc-950 p-3">
+                        <Mono>{g}</Mono>
+                        <div className="mt-1 text-xl font-bold text-zinc-100">{p}/{rs.length} <span className="text-sm font-normal text-zinc-500">pass</span></div>
+                        <div className="mt-2 flex gap-1">{rs.map((r) => <span key={r.id} title={r.feature} className={`h-1.5 flex-1 rounded-full ${r.pass ? 'bg-lime-300' : 'bg-red-500'}`} />)}</div>
+                      </div>
+                    );
+                  })}
+                </CardContent>
+              )}
+            </Card>
+
+            {testReport && (
+              <div className="space-y-3">
+                {['A · Generator', 'B · Design knowledge', 'C · Engine (sandboxed)'].map((g) => (
+                  <Card key={g} className="border-zinc-800 bg-zinc-900/60">
+                    <CardHeader className="pb-2"><CardTitle className="text-base">{g}</CardTitle></CardHeader>
+                    <CardContent className="space-y-2">
+                      {testReport.results.filter((r) => r.group === g).map((r) => (
+                        <div key={r.id} className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-950 p-2.5">
+                          <Badge className={`mt-0.5 shrink-0 font-mono text-[10px] ${r.pass ? 'bg-lime-300 text-zinc-950' : 'bg-red-500 text-white'}`}>{r.pass ? 'PASS' : 'FAIL'}</Badge>
+                          <div className="min-w-0">
+                            <div className="text-[13px] font-medium text-zinc-200"><span className="mr-2 font-mono text-[11px] text-zinc-500">{r.id}</span>{r.feature}</div>
+                            <div className="mt-0.5 text-[12px] leading-snug text-zinc-500">{r.detail}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       </main>

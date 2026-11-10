@@ -163,6 +163,10 @@ export const LIBRARY: BookLesson[] = [
     ],
     rules: [
       "This book is the audit itself — the Beast grades every site on C, R, A, P before shipping.",
+      "Contrast rule: every ink/background pair is measured, never eyeballed — ink ≥ 7:1, soft ink ≥ 4.5:1, accent ≥ 3:1, text-on-accent ≥ 4.5:1 (WCAG maths).",
+      "Repetition rule: one spacing scale, one type scale, tokenised colour roles — the same values repeat across every section, every device class, every site.",
+      "Alignment rule: all content sits on the container grid of its device class (D1–D5); nothing is nudged by eye, no magic offsets.",
+      "Proximity rule: related blocks group at itemGap, sections breathe at sectionPad — spacing is a fixed multiple of the scale, and it is the same multiple everywhere.",
     ],
     powers: "The C.R.A.P. audit phase",
   },

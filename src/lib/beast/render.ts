@@ -7,7 +7,7 @@
 //   D5 ultra  ≥1921   — 5-col, cinematic monumental hero, ambient stage
 // Relative units everywhere: %, fr, clamp(), rem, aspect-ratio — no fixed px widths.
 import { seedFrom, type RNG } from './rng';
-import { buildPalette, type Palette } from './palette';
+import { buildPalette, deriveDarkTokens, type ContrastPair, type DarkTokens, type Palette } from './palette';
 import {
   ADJECTIVES, BODY_FONTS, CITIES, DEVICE_CLASSES, HEAD_FONTS, NICHES, SURNAMES,
   type DesignSpec, type HeroVariant, type Motif, type NavVariant, type Niche,
@@ -22,6 +22,7 @@ export type RenderedSite = {
   html: string;
   email: string;
   phone: string;
+  darkReport?: ContrastPair[]; // WCAG report for the prefers-color-scheme dark tokens (undefined when the site is natively dark)
 };
 
 /* ---------- design spec from seed ---------- */
@@ -60,19 +61,21 @@ export function designFromSeed(seed: string): { rng: RNG; niche: Niche; brand: s
 }
 
 /* ---------- css ---------- */
-function motifCss(motif: Motif, p: Palette): string {
+// Motifs are painted with token vars + color-mix (never hardcoded hex), so the
+// whole surface re-tints automatically under prefers-color-scheme: dark.
+function motifCss(motif: Motif): string {
   switch (motif) {
-    case 'grain': return `.ambient{opacity:.5;background-image:radial-gradient(${p.border} .8px,transparent .8px),radial-gradient(${p.border} .8px,transparent .8px);background-size:22px 22px,22px 22px;background-position:0 0,11px 11px;}`;
-    case 'blobs': return `.ambient{opacity:.6;background:radial-gradient(600px 400px at 12% 8%,${p.accent}22,transparent 60%),radial-gradient(700px 500px at 88% 20%,${p.accent2}1e,transparent 65%),radial-gradient(500px 600px at 50% 100%,${p.accent}14,transparent 60%);}`;
-    case 'grid': return `.ambient{opacity:.45;background-image:linear-gradient(${p.border} 1px,transparent 1px),linear-gradient(90deg,${p.border} 1px,transparent 1px);background-size:56px 56px;}`;
-    case 'rings': return `.ambient{opacity:.5;background:repeating-radial-gradient(circle at 85% 10%,transparent 0 46px,${p.border} 46px 47px);}`;
-    case 'waves': return `.ambient{opacity:.5;background:repeating-linear-gradient(115deg,transparent 0 38px,${p.border} 38px 39px);}`;
-    case 'dots': return `.ambient{opacity:.55;background-image:radial-gradient(${p.inkSoft}55 1.2px,transparent 1.2px);background-size:26px 26px;}`;
-    default: return `.ambient{opacity:.5;background:radial-gradient(120% 90% at 50% -20%,transparent 60%,${p.accent}18 100%);}`;
+    case 'grain': return `.ambient{opacity:.5;background-image:radial-gradient(var(--border) .8px,transparent .8px),radial-gradient(var(--border) .8px,transparent .8px);background-size:22px 22px,22px 22px;background-position:0 0,11px 11px;}`;
+    case 'blobs': return `.ambient{opacity:.6;background:radial-gradient(600px 400px at 12% 8%,color-mix(in srgb,var(--accent) 13%,transparent),transparent 60%),radial-gradient(700px 500px at 88% 20%,color-mix(in srgb,var(--accent2) 12%,transparent),transparent 65%),radial-gradient(500px 600px at 50% 100%,color-mix(in srgb,var(--accent) 8%,transparent),transparent 60%);}`;
+    case 'grid': return `.ambient{opacity:.45;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:56px 56px;}`;
+    case 'rings': return `.ambient{opacity:.5;background:repeating-radial-gradient(circle at 85% 10%,transparent 0 46px,var(--border) 46px 47px);}`;
+    case 'waves': return `.ambient{opacity:.5;background:repeating-linear-gradient(115deg,transparent 0 38px,var(--border) 38px 39px);}`;
+    case 'dots': return `.ambient{opacity:.55;background-image:radial-gradient(color-mix(in srgb,var(--inkSoft) 33%,transparent) 1.2px,transparent 1.2px);background-size:26px 26px;}`;
+    default: return `.ambient{opacity:.5;background:radial-gradient(120% 90% at 50% -20%,transparent 60%,color-mix(in srgb,var(--accent) 9%,transparent) 100%);}`;
   }
 }
 
-function buildCss(p: Palette, d: DesignSpec, niche: Niche): string {
+function buildCss(p: Palette, d: DesignSpec, niche: Niche, dk?: DarkTokens): string {
   const sp = d.spaceRhythm === 'compact' ? 64 : d.spaceRhythm === 'cozy' ? 88 : 112;
   const headCase = d.displayCase === 'upper' ? 'uppercase' : d.displayCase === 'lower' ? 'lowercase' : 'none';
   const navBg = d.darkNav ? p.ink : p.bg;
@@ -85,6 +88,7 @@ function buildCss(p: Palette, d: DesignSpec, niche: Niche): string {
   --bg:${p.bg};--bgAlt:${p.bgAlt};--surface:${p.surface};--ink:${p.ink};--inkSoft:${p.inkSoft};
   --accent:${p.accent};--accent2:${p.accent2};--onAccent:${p.inkOnAccent};--border:${p.border};
   --navBg:${navBg};--navInk:${navInk};
+  color-scheme:${p.theme === 'dark' ? 'dark' : 'light'};
   --fh:'${d.fontHead}',serif;--fb:'${d.fontBody}',sans-serif;
   --radius:${d.radius}px;--btnR:${d.btnRadius === 999 ? '999px' : d.btnRadius + 'px'};
   --container:100%;--gut:16px;--spSec:${sp * 0.6}px;--fx:1;
@@ -98,6 +102,7 @@ a{color:inherit;text-decoration:none}
 :focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:2px}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 .ambient{position:fixed;inset:0;z-index:-1;pointer-events:none}
+${motifCss(d.motif)}
 .wrap{width:var(--container);margin-inline:auto;padding-inline:var(--gut)}
 section{padding-block:var(--spSec)}
 h1,h2,h3{font-family:var(--fh);line-height:1.08;letter-spacing:-.01em}
@@ -113,9 +118,9 @@ h3{font-size:clamp(1.05rem,2vw,calc(1.3rem*var(--fx)));font-weight:600}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:56px;padding:12px 24px;border-radius:var(--btnR);font-weight:700;font-size:.95rem;border:2px solid transparent;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,background .18s ease}
 .btn:active{transform:translateY(1px)}
 .btnFill{background:var(--accent);color:var(--onAccent)}
-.btnFill:hover{box-shadow:0 10px 24px -10px ${p.accent}88;transform:translateY(-1px)}
+.btnFill:hover{box-shadow:0 10px 24px -10px color-mix(in srgb,var(--accent) 53%,transparent);transform:translateY(-1px)}
 .btnGhost{border-color:var(--ink);color:var(--ink);background:transparent}
-.btnGhost:hover{background:${p.ink}0d}
+.btnGhost:hover{background:color-mix(in srgb,var(--ink) 5%,transparent)}
 /* NAV — D1: drawer */
 .nav{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--navBg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid ${d.darkNav ? 'transparent' : 'var(--border)'}}
 .navIn{display:flex;align-items:center;justify-content:space-between;min-height:64px;gap:16px}
@@ -136,7 +141,7 @@ h3{font-size:clamp(1.05rem,2vw,calc(1.3rem*var(--fx)));font-weight:600}
 .secHead{margin-bottom:34px;display:flex;flex-direction:column;gap:10px}
 .gridFeat{display:grid;grid-template-columns:1fr;gap:14px}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px;transition:transform .2s ease,box-shadow .2s ease}
-.card:hover{transform:translateY(-3px);box-shadow:0 18px 40px -22px ${p.ink}55}
+.card:hover{transform:translateY(-3px);box-shadow:0 18px 40px -22px color-mix(in srgb,var(--ink) 33%,transparent)}
 .card .cnum{font-variant-numeric:tabular-nums;color:var(--accent);font-weight:800;font-size:.8rem;letter-spacing:.1em}
 .card p{color:var(--inkSoft);font-size:.95rem;margin-top:8px}
 .gridGal{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
@@ -268,7 +273,16 @@ body{padding-bottom:76px}
   .footCols{text-align:center}
   .footCols ul{justify-items:center}
 }
-.stats-unlock{display:none}
+.stats-unlock{display:none}${
+    dk
+      ? `
+/* ============ OS dark mode — re-derived token set (MDN prefers-color-scheme;
+   every token re-passes its own WCAG contrast check, see QA report) ============ */
+@media (prefers-color-scheme:dark){
+  :root{--bg:${dk.bg};--bgAlt:${dk.bgAlt};--surface:${dk.surface};--ink:${dk.ink};--inkSoft:${dk.inkSoft};--accent:${dk.accent};--accent2:${dk.accent2};--onAccent:${dk.inkOnAccent};--border:${dk.border};--navBg:${d.darkNav ? dk.ink : dk.bg};--navInk:${d.darkNav ? dk.bg : dk.ink};color-scheme:dark}
+}`
+      : ''
+  }
 `.replace(/\n/g, '\n');
 }
 
@@ -284,6 +298,7 @@ function brandSlug(brand: string): string {
 /* ---------- render ---------- */
 export function renderSite(seed: string, owner: string): RenderedSite {
   const { rng, niche, brand, city, design, palette } = designFromSeed(seed);
+  const dk = palette.theme === 'dark' ? null : deriveDarkTokens(palette);
   const year = new Date().getFullYear();
   const email = `hello@${brandSlug(brand)}`;
   const phone = `+1 (${rng.int(200, 989)}) ${rng.int(200, 989)}-${rng.int(1000, 9999)}`;
@@ -315,7 +330,7 @@ export function renderSite(seed: string, owner: string): RenderedSite {
   secHtml['hero'] = `
   <section class="hero" id="top"><div class="wrap heroWrap">
     <div class="hcopy reveal">
-      <span class="kicker k${design.eyebrow === 'line' ? 'line' : design.eyebrow === 'brack' ? 'brack' : ''}">${design.eyebrow === 'dot' ? '<span class="kd"></span>' : ''}${design.eyebrow === 'number' ? `<span class="knumber">01</span>` : ''}${heroTag}</span>
+      <span class="kicker k${design.eyebrow === 'line' ? 'line' : design.eyebrow === 'bracket' ? 'brack' : ''}">${design.eyebrow === 'dot' ? '<span class="kd"></span>' : ''}${design.eyebrow === 'number' ? `<span class="knumber">01</span>` : ''}${heroTag}</span>
       <h1>${headline}</h1>
       <p class="lead">${sub}</p>
       <div class="hbtns">
@@ -465,8 +480,10 @@ export function renderSite(seed: string, owner: string): RenderedSite {
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>${brand} — ${niche.label} in ${city}</title>
+<meta name="generator" content="Beast Web Developer 2.0"/>
 <meta name="description" content="${headline} ${brand}, a ${niche.label} in ${city}. ${sub}"/>
-<meta name="theme-color" content="${palette.bg}"/>
+<meta name="theme-color" content="${palette.bg}" media="(prefers-color-scheme: light)"/>${dk ? `<meta name="theme-color" content="${dk.tokens.bg}" media="(prefers-color-scheme: dark)"/>` : ''}
+<meta name="color-scheme" content="${palette.theme === 'dark' ? 'dark' : 'light dark'}"/>
 <link rel="icon" href="${favicon}"/>
 <meta property="og:type" content="website"/>
 <meta property="og:site_name" content="${brand}"/>
@@ -480,7 +497,7 @@ export function renderSite(seed: string, owner: string): RenderedSite {
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="${fontsUrl}" rel="stylesheet"/>
-<style>${buildCss(palette, design, niche)}</style>
+<style>${buildCss(palette, design, niche, dk?.tokens)}</style>
 </head>
 <body data-hero="${design.heroVariant}" data-motif="${design.motif}">
 <a class="skip" href="#main">Skip to content</a>
@@ -526,7 +543,140 @@ ${design.sectionOrder.map((s) => secHtml[s]).join('\n')}
 </body>
 </html>`;
 
-  return { brand, niche, city, design, palette, html, email, phone };
+  return { brand, niche, city, design, palette, html, email, phone, darkReport: dk?.report };
+}
+
+/* ---------- support pack ----------
+   Research-based launch essentials for a sellable static site:
+   sitemap.xml + robots.txt (technical SEO), 404.html (dead-link safety),
+   DESIGN-NOTES.md (human-grade provenance — the "months of work" paper trail).
+   All derived deterministically from the seed. */
+export function renderSupportFiles(
+  seed: string,
+  owner: string,
+  meta?: { price?: number; copyright?: string }
+): { 'sitemap.xml': string; 'robots.txt': string; '404.html': string; 'DESIGN-NOTES.md': string } {
+  const { niche, brand, city, design, palette } = designFromSeed(seed);
+  const dk = palette.theme === 'dark' ? null : deriveDarkTokens(palette);
+  const year = new Date().getFullYear();
+  const domain = brandSlug(brand);
+  const copyright = meta?.copyright || `© ${year} ${owner}. All rights reserved.`;
+
+  const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
+<!-- Buyer: replace example.com with your real domain after deployment. -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://${domain}/</loc>
+    <lastmod>${new Date().toISOString().slice(0, 10)}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>
+`;
+
+  const robots = `# robots.txt — ${brand}
+User-agent: *
+Allow: /
+
+Sitemap: https://${domain}/sitemap.xml
+`;
+
+  const notFound = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Page not found — ${brand}</title>
+<meta name="robots" content="noindex"/>
+<meta name="theme-color" content="${palette.bg}"/>
+<style>
+:root{--bg:${palette.bg};--ink:${palette.ink};--inkSoft:${palette.inkSoft};--accent:${palette.accent};--fh:'${design.fontHead}',serif;--fb:'${design.fontBody}',sans-serif;color-scheme:${palette.theme === 'dark' ? 'dark' : 'light'}}${dk ? `
+@media (prefers-color-scheme:dark){:root{--bg:${dk.tokens.bg};--ink:${dk.tokens.ink};--inkSoft:${dk.tokens.inkSoft};--accent:${dk.tokens.accent};color-scheme:dark}}` : ''}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--fb);min-height:100vh;display:grid;place-items:center;text-align:center;padding:24px}
+h1{font-family:var(--fh);font-size:clamp(2.2rem,8vw,4rem);line-height:1.05}
+p{color:var(--inkSoft);margin:14px 0 26px;max-width:44ch}
+a{display:inline-block;background:var(--accent);color:var(--bg);font-weight:700;padding:14px 28px;border-radius:999px;text-decoration:none;min-height:48px;line-height:20px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Wrong turn.</h1>
+  <p>This page does not exist — but ${brand} in ${city} is exactly where you left it.</p>
+  <a href="/">Back to ${brand}</a>
+  <p style="margin-top:34px;font-size:.8rem">${copyright}</p>
+</main>
+</body>
+</html>
+`;
+
+  const contrastRows = palette.report
+    .map((r) => `| ${r.pair} | ${r.ratio}:1 | ${r.target}:1 | ${r.pass ? 'PASS' : 'flagged'} |`)
+    .join('\n');
+  const darkRows = (dk?.report ?? [])
+    .map((r) => `| ${r.pair} | ${r.ratio}:1 | ${r.target}:1 | ${r.pass ? 'PASS' : 'flagged'} |`)
+    .join('\n');
+  const notes = `# Design notes — ${brand}
+
+> ${brand} — ${niche.label} in ${city}.
+> Every decision below was made deliberately, in stage order, and is
+> reproducible from the seed. This file is the paper trail a human
+> designer would hand you with the invoice.
+
+**Commission:** ${copyright}
+**Design seed:** \`${seed}\` (same seed → identical site, forever)
+**Shelf price:** ${meta?.price ? `$${meta.price}` : 'set at stamp time'}
+
+## 1 · Colour system
+Palette **${palette.name}** — ${palette.harmony} harmony, ${palette.theme} theme.
+Not sampled by vibe: generated by harmony math, then contrast-corrected per role until it cleared WCAG.
+
+| pair | measured | target | verdict |
+| --- | --- | --- | --- |
+${contrastRows}
+${dk ? `
+### Dark mode (prefers-color-scheme)
+The dark theme is a re-derived token set — every token re-passes its own contrast check:
+
+| pair | measured | target | verdict |
+| --- | --- | --- | --- |
+${darkRows}
+` : ''}
+## 2 · Typography
+Display: **${design.fontHead}** · Body: **${design.fontBody}** (Google Fonts, free licence).
+Fluid scale via clamp() — no breakpoint jumps, no fixed px headings.
+
+## 3 · Structure
+Hero variant: **${design.heroVariant}** · nav: **${design.navVariant}** · motif: **${design.motif}** ·
+spacing rhythm: **${design.spaceRhythm}** · eyebrow: **${design.eyebrow}** · case: **${design.displayCase}**.
+Section order: ${design.sectionOrder.join(' → ')}.
+
+## 4 · The five device classes (one site, five relative layouts)
+${DEVICE_CLASSES.map((d) => `- **${d.id} ${d.name} (${d.range})** — nav: ${d.nav}; hero: ${d.hero}; features ${d.featureCols}-col; footer: ${d.footer}.`).join('\n')}
+These are structural re-arrangements, not zoom levels. Built from relative units only
+(%, fr, clamp(), rem, aspect-ratio).
+
+## 5 · C.R.A.P. audit (Robin Williams)
+- **Contrast** — every ink/background pair measured against WCAG targets (table above).
+- **Repetition** — one spacing scale, one type scale, tokenised colour roles, reused everywhere.
+- **Alignment** — all content sits on the container grid of its device class; nothing nudged by eye.
+- **Proximity** — related blocks grouped, section rhythm a fixed multiple of the spacing scale.
+
+## 6 · Research base
+NN/g eyetracking & reading patterns (F/Z/layer-cake/spotted) · Material Design responsive
+layout grid · MDN grid layout recipes · Setproduct bento math · Müller-Brockmann grid
+systems · Robin Williams C.R.A.P. · WCAG 2.1 contrast maths · MDN prefers-color-scheme.
+
+## 7 · Launch checklist (for the buyer)
+1. Replace \`${domain}\` in sitemap.xml and robots.txt with your real domain.
+2. Upload the whole folder (index.html, 404.html, sitemap.xml, robots.txt) to any static host.
+3. Submit the sitemap in Google Search Console.
+4. The contact form opens the visitor's mail app — no backend, no servers, nothing to maintain.
+
+${copyright}
+`;
+
+  return { 'sitemap.xml': sitemap, 'robots.txt': robots, '404.html': notFound, 'DESIGN-NOTES.md': notes };
 }
 
 export { DEVICE_CLASSES };

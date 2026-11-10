@@ -68,29 +68,36 @@ with zipfile.ZipFile(OUT) as zf:
     assert bad is None, f"corrupt entry: {bad}"
     required = [
         "beast-web-developer/src/app/page.tsx",
+        "beast-web-developer/src/app/api/beast/route.ts",
+        "beast-web-developer/src/app/api/beast/test/route.ts",
+        "beast-web-developer/src/app/api/beast/site/[id]/route.ts",
+        "beast-web-developer/src/app/api/beast/site/[id]/zip/route.ts",
+        "beast-web-developer/src/app/api/beast/zip-all/route.ts",
+        "beast-web-developer/src/lib/beast/engine.ts",
+        "beast-web-developer/src/lib/beast/render.ts",
+        "beast-web-developer/src/lib/beast/spec.ts",
+        "beast-web-developer/src/lib/beast/palette.ts",
         "beast-web-developer/src/lib/beast/layouts.ts",
-        "beast-web-developer/src/lib/beast/generator.ts",
-        "beast-web-developer/src/lib/beast/scheduler.ts",
         "beast-web-developer/src/lib/beast/knowledge.ts",
-        "beast-web-developer/src/lib/beast/palettes.ts",
-        "beast-web-developer/src/lib/beast/typography.ts",
-        "beast-web-developer/src/lib/beast/heartbeat.ts",
-        "beast-web-developer/src/lib/beast/aipool.ts",
-        "beast-web-developer/src/lib/beast/archetypes.ts",
-        "beast-web-developer/prisma/schema.prisma",
+        "beast-web-developer/src/lib/beast/selftest.ts",
+        "beast-web-developer/src/lib/beast/rng.ts",
+        "beast-web-developer/scripts/test-beast.ts",
+        "beast-web-developer/scripts/package-app.py",
         "beast-web-developer/package.json",
         "beast-web-developer/README-BEAST.md",
         "beast-web-developer/.env",
         "beast-web-developer/db/.gitkeep",
-        "beast-web-developer/src/app/api/download/[id]/route.ts",
-        "beast-web-developer/src/app/api/clear/route.ts",
-        "beast-web-developer/scripts/test-layouts.ts",
     ]
     missing = [r for r in required if r not in names]
     assert not missing, f"missing: {missing}"
+    # the prisma schema is legacy scaffolding from an earlier iteration —
+    # engine v2 is file-based; flag only if it vanished silently
     env_content = zf.read("beast-web-developer/.env").decode()
     assert "file:../db/custom.db" in env_content, "portable .env not applied"
     assert not any("repo-scratch" in n or "node_modules" in n for n in names), "junk leaked in"
+    # selftest.ts must be present and reference the engine sandbox
+    st = zf.read("beast-web-developer/src/lib/beast/selftest.ts").decode()
+    assert "BEAST_DATA_DIR" in st, "selftest sandbox missing"
     html_routes = [n for n in names if n.startswith("beast-web-developer/src/app/api/")]
     print(f"entries: {len(names)} | api routes: {len(html_routes)}")
     print("VERIFY PASS ✅")

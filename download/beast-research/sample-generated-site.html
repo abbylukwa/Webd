@@ -1,20 +1,34 @@
 <!DOCTYPE html>
-<html lang="en" data-hero="poster">
+<html lang="en" data-hero="marquee">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>EmberBind — bookbindery in Marrow Bay</title>
-<meta name="description" content="Books built for decades. EmberBind, a bookbindery in Marrow Bay. We bind with linen thread and hide glue, the slow way on purpose, and we do it in Marrow Bay — bookbindery for people who notice the details."/>
+<title>The Amber Meadow — florist studio in Kirkwall</title>
+<meta name="generator" content="Beast Web Developer 2.0"/>
+<meta name="description" content="This week, in season. The Amber Meadow, a florist studio in Kirkwall. if it is not in season, it is not in the bucket, and we do it in Kirkwall — florist studio for people who notice the details."/>
+<meta name="theme-color" content="#f5f4f6" media="(prefers-color-scheme: light)"/><meta name="theme-color" content="#121014" media="(prefers-color-scheme: dark)"/>
+<meta name="color-scheme" content="light dark"/>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20rx%3D'14'%20fill%3D'%23bb36c4'%2F%3E%3Ctext%20x%3D'32'%20y%3D'43'%20font-family%3D'Arial%2Csans-serif'%20font-size%3D'34'%20font-weight%3D'800'%20text-anchor%3D'middle'%20fill%3D'%23ffffff'%3EA%3C%2Ftext%3E%3C%2Fsvg%3E"/>
+<meta property="og:type" content="website"/>
+<meta property="og:site_name" content="The Amber Meadow"/>
+<meta property="og:title" content="The Amber Meadow — florist studio in Kirkwall"/>
+<meta property="og:description" content="This week, in season."/>
+<meta property="og:locale" content="en_US"/>
+<meta name="twitter:card" content="summary"/>
+<meta name="twitter:title" content="The Amber Meadow — florist studio in Kirkwall"/>
+<meta name="twitter:description" content="This week, in season."/>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Florist","name":"The Amber Meadow","description":"This week, in season. The Amber Meadow — florist studio in Kirkwall.","email":"hello@theambermeadow.site","telephone":"+1 (973) 449-5895","priceRange":"$25–$200","address":{"@type":"PostalAddress","streetAddress":"37 the flower corner","addressLocality":"Kirkwall","addressCountry":"US"},"openingHoursSpecification":[{"@type":"OpeningHoursSpecification","dayOfWeek":["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"],"opens":"09:00","closes":"19:00"},{"@type":"OpeningHoursSpecification","dayOfWeek":["Sunday"],"opens":"10:00","closes":"14:00"}]}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;600;700;800&family=Karla:wght@400;500;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet"/>
 <style>
 :root{
-  --bg:#fafaf9;--bgAlt:#eee8e7;--surface:#ffffff;--ink:#2b1d1c;--inkSoft:#634c4b;
-  --accent:#5da027;--accent2:#459ca1;--onAccent:#1b0f0e;--border:#e1dbdb;
-  --navBg:#fafaf9;--navInk:#2b1d1c;
-  --fh:'Libre Baskerville',serif;--fb:'Karla',sans-serif;
-  --radius:12px;--btnR:0px;
+  --bg:#f5f4f6;--bgAlt:#e8e5eb;--surface:#ffffff;--ink:#231d2a;--inkSoft:#554965;
+  --accent:#bb36c4;--accent2:#5231aa;--onAccent:#ffffff;--border:#dddbe1;
+  --navBg:#231d2a;--navInk:#f5f4f6;
+  color-scheme:light;
+  --fh:'Cormorant Garamond',serif;--fb:'Space Grotesk',sans-serif;
+  --radius:0px;--btnR:999px;
   --container:100%;--gut:16px;--spSec:67.2px;--fx:1;
   --heroCols:1fr;
 }
@@ -26,11 +40,12 @@ a{color:inherit;text-decoration:none}
 :focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:2px}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 .ambient{position:fixed;inset:0;z-index:-1;pointer-events:none}
+.ambient{opacity:.5;background:repeating-linear-gradient(115deg,transparent 0 38px,var(--border) 38px 39px);}
 .wrap{width:var(--container);margin-inline:auto;padding-inline:var(--gut)}
 section{padding-block:var(--spSec)}
 h1,h2,h3{font-family:var(--fh);line-height:1.08;letter-spacing:-.01em}
-h1{font-size:clamp(1.9rem,6vw,calc(2.4rem*var(--fx)));text-transform:none;font-weight:700}
-h2{font-size:clamp(1.5rem,3.6vw,calc(2.2rem*var(--fx)));text-transform:none;font-weight:600}
+h1{font-size:clamp(1.9rem,6vw,calc(2.4rem*var(--fx)));text-transform:uppercase;font-weight:700}
+h2{font-size:clamp(1.5rem,3.6vw,calc(2.2rem*var(--fx)));text-transform:uppercase;font-weight:600}
 h3{font-size:clamp(1.05rem,2vw,calc(1.3rem*var(--fx)));font-weight:600}
 .kicker{display:inline-flex;align-items:center;gap:8px;color:var(--accent);font-weight:700;letter-spacing:.14em;text-transform:uppercase;font-size:.72rem;margin-bottom:14px}
 .kicker .kd{width:8px;height:8px;background:var(--accent);border-radius:50%}
@@ -41,11 +56,11 @@ h3{font-size:clamp(1.05rem,2vw,calc(1.3rem*var(--fx)));font-weight:600}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:56px;padding:12px 24px;border-radius:var(--btnR);font-weight:700;font-size:.95rem;border:2px solid transparent;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,background .18s ease}
 .btn:active{transform:translateY(1px)}
 .btnFill{background:var(--accent);color:var(--onAccent)}
-.btnFill:hover{box-shadow:0 10px 24px -10px #5da02788;transform:translateY(-1px)}
+.btnFill:hover{box-shadow:0 10px 24px -10px color-mix(in srgb,var(--accent) 53%,transparent);transform:translateY(-1px)}
 .btnGhost{border-color:var(--ink);color:var(--ink);background:transparent}
-.btnGhost:hover{background:#2b1d1c0d}
+.btnGhost:hover{background:color-mix(in srgb,var(--ink) 5%,transparent)}
 /* NAV — D1: drawer */
-.nav{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--navBg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
+.nav{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--navBg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid transparent}
 .navIn{display:flex;align-items:center;justify-content:space-between;min-height:64px;gap:16px}
 .logo{font-family:var(--fh);font-weight:700;font-size:1.15rem;color:var(--navInk);display:flex;align-items:center;gap:10px}
 .logoDot{width:12px;height:12px;border-radius:50%;background:var(--accent);flex:none}
@@ -64,7 +79,7 @@ h3{font-size:clamp(1.05rem,2vw,calc(1.3rem*var(--fx)));font-weight:600}
 .secHead{margin-bottom:34px;display:flex;flex-direction:column;gap:10px}
 .gridFeat{display:grid;grid-template-columns:1fr;gap:14px}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px;transition:transform .2s ease,box-shadow .2s ease}
-.card:hover{transform:translateY(-3px);box-shadow:0 18px 40px -22px #2b1d1c55}
+.card:hover{transform:translateY(-3px);box-shadow:0 18px 40px -22px color-mix(in srgb,var(--ink) 33%,transparent)}
 .card .cnum{font-variant-numeric:tabular-nums;color:var(--accent);font-weight:800;font-size:.8rem;letter-spacing:.1em}
 .card p{color:var(--inkSoft);font-size:.95rem;margin-top:8px}
 .gridGal{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
@@ -98,6 +113,16 @@ h3{font-size:clamp(1.05rem,2vw,calc(1.3rem*var(--fx)));font-weight:600}
 .cbox h3{margin-bottom:8px}
 .cbox p,.cbox li{color:var(--inkSoft);font-size:.95rem}
 .cbox ul{list-style:none;display:grid;gap:6px}
+.cform{margin-top:34px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:26px;display:grid;gap:14px;max-width:640px}
+.cform h3{margin:0}
+.cform label{display:grid;gap:6px;font-size:.85rem;font-weight:600;color:var(--inkSoft)}
+.cform input,.cform textarea{font-family:var(--fb);font-size:1rem;color:var(--ink);background:var(--bg);border:1px solid var(--border);border-radius:calc(var(--radius) * .6);padding:12px 14px;min-height:44px}
+.cform textarea{resize:vertical}
+.cform input:focus-visible,.cform textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.cform .frow{display:grid;gap:14px}
+.cform small{color:var(--inkSoft);font-size:.8rem}
+.skip{position:absolute;left:-9999px;top:0;z-index:100;background:var(--accent);color:var(--onAccent);padding:12px 18px;font-weight:700;border-radius:0 0 var(--radius) 0}
+.skip:focus{left:0}
 /* footer */
 footer.site{border-top:1px solid var(--border);padding:40px 0 calc(28px + env(safe-area-inset-bottom));background:var(--bgAlt)}
 .footCols{display:grid;grid-template-columns:1fr;gap:24px}
@@ -187,102 +212,109 @@ body{padding-bottom:76px}
   .footCols ul{justify-items:center}
 }
 .stats-unlock{display:none}
+/* ============ OS dark mode — re-derived token set (MDN prefers-color-scheme;
+   every token re-passes its own WCAG contrast check, see QA report) ============ */
+@media (prefers-color-scheme:dark){
+  :root{--bg:#121014;--bgAlt:#1f1c22;--surface:#29252d;--ink:#edebf0;--inkSoft:#b3a9bc;--accent:#ce67d5;--accent2:#5c37be;--onAccent:#140e1b;--border:#403847;--navBg:#edebf0;--navInk:#121014;color-scheme:dark}
+}
 </style>
 </head>
-<body data-hero="poster" data-motif="grid">
+<body data-hero="marquee" data-motif="waves">
+<a class="skip" href="#main">Skip to content</a>
 <div class="ambient" aria-hidden="true"></div>
 <header class="nav"><div class="wrap navIn">
-  <a class="logo" href="#top"><span class="logoDot"></span>EmberBind</a>
-  <ul class="navLinks"><li class=""><a href="#stats">Numbers</a></li><li class=""><a href="#menu">Binding</a></li><li class=""><a href="#testimonials">Reviews</a></li><li class="hideD2"><a href="#services">Services</a></li><li class="hideD2"><a href="#contact">Visit</a></li></ul>
+  <a class="logo" href="#top"><span class="logoDot"></span>The Amber Meadow</a>
+  <ul class="navLinks"><li class=""><a href="#about">About</a></li><li class=""><a href="#gallery">Work</a></li><li class=""><a href="#menu">This</a></li><li class="hideD2"><a href="#faq">FAQ</a></li><li class="hideD2"><a href="#services">Services</a></li></ul>
   <a class="btn btnFill navCta" href="#contact" style="min-height:44px">Visit</a>
   <button class="burger" aria-label="Open menu" aria-expanded="false" onclick="document.getElementById('drawer').classList.add('open');this.setAttribute('aria-expanded','true')"><span></span><span></span><span></span></button>
 </div></header>
 <nav class="drawer" id="drawer" aria-label="Mobile menu">
-  <div class="drawerTop"><span class="logo"><span class="logoDot"></span>EmberBind</span>
+  <div class="drawerTop"><span class="logo"><span class="logoDot"></span>The Amber Meadow</span>
   <button class="burger" style="display:inline-flex" aria-label="Close menu" onclick="document.getElementById('drawer').classList.remove('open');document.querySelectorAll('.burger')[0].setAttribute('aria-expanded','false')"><span style="transform:rotate(45deg) translateY(5px)"></span><span style="opacity:0"></span><span style="transform:rotate(-45deg) translateY(-5px)"></span></button></div>
-  <a class="dl" href="#stats">Numbers</a><a class="dl" href="#menu">Binding</a><a class="dl" href="#testimonials">Reviews</a><a class="dl" href="#services">Services</a><a class="dl" href="#contact">Visit</a>
+  <a class="dl" href="#about">About</a><a class="dl" href="#gallery">Work</a><a class="dl" href="#menu">This</a><a class="dl" href="#faq">FAQ</a><a class="dl" href="#services">Services</a>
   <a class="btn btnFill" href="#contact" onclick="document.getElementById('drawer').classList.remove('open')">Book a visit</a>
 </nav>
-<main>
+<main id="main">
 
   <section class="hero" id="top"><div class="wrap heroWrap">
     <div class="hcopy reveal">
-      <span class="kicker k"><span class="knumber">01</span>Since day one</span>
-      <h1>Books built for decades.</h1>
-      <p class="lead">We bind with linen thread and hide glue, the slow way on purpose, and we do it in Marrow Bay — bookbindery for people who notice the details.</p>
+      <span class="kicker k"><span class="knumber">01</span>By appointment</span>
+      <h1>This week, in season.</h1>
+      <p class="lead">if it is not in season, it is not in the bucket, and we do it in Kirkwall — florist studio for people who notice the details.</p>
       <div class="hbtns">
-        <a class="btn btnFill" href="#contact">Book a visit</a>
-        <a class="btn btnGhost" href="#stats">See the bookbindery</a>
+        <a class="btn btnFill" href="#contact">Get started</a>
+        <a class="btn btnGhost" href="#about">See the florist</a>
       </div>
     </div>
-    <div class="hvisual reveal" style="background:linear-gradient(135deg,#5da027,#459ca1)">
-      <span class="heroBadge">EmberBind</span>
+    <div class="hvisual reveal" style="background:linear-gradient(135deg,#bb36c4,#5231aa)">
+      <span class="heroBadge">The Amber Meadow</span>
     </div>
   </div></section>
 
-  <section id="stats"><div class="wrap">
-    <div class="secHead reveal"><span class="kicker">Numbers, kept honest</span><h2>The scoreboard</h2></div>
-    <div class="gridStats reveal"><div class="stat"><b>5</b><span>restorations</span></div><div class="stat"><b>164+</b><span>bindings a year</span></div><div class="stat"><b>8</b><span>years at the bench</span></div><div class="stat"><b>2017</b><span>est.</span></div></div>
+  <section id="about"><div class="wrap">
+    <div class="secHead reveal"><span class="kicker">The idea</span><h2>Why we exist</h2></div>
+    <div class="aboutCols">
+      <p class="lead">if it is not in season, it is not in the bucket. Nothing here is accidental. You can feel the difference in a week.</p>
+      <div class="pull reveal">“Craft is a schedule you keep.”</div>
+    </div>
+  </div></section>
+
+  <section id="gallery"><div class="wrap">
+    <div class="secHead reveal"><span class="kicker">Recent work</span><h2>Fresh from the bench</h2></div>
+    <div class="gridGal">
+      <figure class="tile reveal" style="background:linear-gradient(135deg,#bb36c4,#5231aa)"><span>Seasonal bouquets</span></figure>
+      <figure class="tile reveal" style="background:linear-gradient(24deg,#5231aa,#231d2a)"><span>Weddings & events</span></figure>
+      <figure class="tile reveal" style="background:radial-gradient(circle at 30% 30%,#bb36c4,#231d2a)"><span>Weekly subscriptions</span></figure>
+      <figure class="tile reveal" style="background:linear-gradient(160deg,#bb36c4 10%,#e8e5eb 90%)"><span>Dried arrangements</span></figure>
+    </div>
   </div></section>
 
   <section id="menu"><div class="wrap">
-    <div class="secHead reveal"><span class="kicker">Priced plainly</span><h2>Binding services</h2></div>
-    <div class="menuList reveal"><div class="menuRow"><div><b>Custom bindings</b><small>House standard</small></div><i>$111.24</i></div><div class="menuRow"><div><b>Book restoration</b><small>Seasonal</small></div><i>$54.83</i></div><div class="menuRow"><div><b>Journals & sketchbooks</b><small>Limited daily run</small></div><i>$117.20</i></div><div class="menuRow"><div><b>Marbled papers</b><small>Made to order</small></div><i>$111.64</i></div><div class="menuRow"><div><b>Workshops</b><small>House standard</small></div><i>$129.88</i></div><div class="menuRow"><div><b>Guild letters</b><small>Seasonal</small></div><i>$140.67</i></div></div>
+    <div class="secHead reveal"><span class="kicker">Priced plainly</span><h2>This week’s stems</h2></div>
+    <div class="menuList reveal"><div class="menuRow"><div><b>Seasonal bouquets</b><small>House standard</small></div><i>$54.90</i></div><div class="menuRow"><div><b>Weddings & events</b><small>Most requested</small></div><i>$77.46</i></div><div class="menuRow"><div><b>Weekly subscriptions</b><small>House standard</small></div><i>$27.74</i></div><div class="menuRow"><div><b>Dried arrangements</b><small>Most requested</small></div><i>$67.90</i></div><div class="menuRow"><div><b>Funeral tributes</b><small>Seasonal</small></div><i>$38.48</i></div><div class="menuRow"><div><b>Workshops</b><small>House standard</small></div><i>$27.97</i></div></div>
   </div></section>
 
-  <section id="testimonials"><div class="wrap">
-    <div class="secHead reveal"><span class="kicker">Word of mouth</span><h2>What people say</h2></div>
-    <div class="quotes">
-      <blockquote class="quote reveal"><p>“My grandmother's cookbook came back looking like it had been waiting for this.”</p><footer>— Ada, Marrow Bay</footer></blockquote>
-      <blockquote class="quote reveal"><p>“They rebound my thesis. It is now the nicest object I own.”</p><footer>— Sofia, regular since 2024</footer></blockquote>
-    </div>
+  <section id="faq"><div class="wrap faq">
+    <div class="secHead reveal"><span class="kicker">Asked often</span><h2>Good questions</h2></div>
+    <details><summary>Can I order for same day?</summary><p class="fa">Order by noon for same-day city delivery; bouquets are made to order, never boxed ahead.</p></details><details><summary>Do you reuse vases?</summary><p class="fa">Yes — return the vase and take 3 off your next order. We sterilise everything twice.</p></details><details><summary>Where are you?</summary><p class="fa">Behind the arches of the flower corner in Kirkwall — knock during opening hours.</p></details><details><summary>How do I reach you fastest?</summary><p class="fa">Email hello@theambermeadow.site or call +1 (973) 449-5895. We answer within one working day.</p></details><details><summary>Do you do gift options?</summary><p class="fa">Absolutely, with a handwritten note at no charge.</p></details>
   </div></section>
 
   <section id="services"><div class="wrap">
     <div class="secHead reveal"><span class="kicker">What we do</span><h2>Six ways in</h2></div>
     <div class="gridFeat">
-      <article class="card reveal"><div class="cnum">01</div><h3>Custom bindings</h3><p>Small groups, big attention.</p></article>
-      <article class="card reveal"><div class="cnum">02</div><h3>Book restoration</h3><p>Talk to us about timing.</p></article>
-      <article class="card reveal"><div class="cnum">03</div><h3>Journals & sketchbooks</h3><p>Small groups, big attention.</p></article>
-      <article class="card reveal"><div class="cnum">04</div><h3>Marbled papers</h3><p>Booked week by week.</p></article>
-      <article class="card reveal"><div class="cnum">05</div><h3>Workshops</h3><p>The house favourite.</p></article>
-      <article class="card reveal"><div class="cnum">06</div><h3>Guild letters</h3><p>Talk to us about timing.</p></article>
-    </div>
-  </div></section>
-
-  <section id="contact"><div class="wrap">
-    <div class="secHead reveal"><span class="kicker">Visit</span><h2>Find us in Marrow Bay</h2></div>
-    <div class="contactCols">
-      <div class="cbox reveal"><h3>Address</h3><p>64 the bindery bench<br/>Marrow Bay</p></div>
-      <div class="cbox reveal"><h3>Hours</h3><ul><li>Mon–Fri 8–18</li><li>Sat 9–16</li><li>Sun closed</li></ul></div>
-      <div class="cbox reveal"><h3>Contact</h3><ul><li><a href="mailto:hello@emberbind.site">hello@emberbind.site</a></li><li>+1 (243) 727-1204</li></ul></div>
+      <article class="card reveal"><div class="cnum">01</div><h3>Seasonal bouquets</h3><p>Built around your schedule.</p></article>
+      <article class="card reveal"><div class="cnum">02</div><h3>Weddings & events</h3><p>Booked week by week.</p></article>
+      <article class="card reveal"><div class="cnum">03</div><h3>Weekly subscriptions</h3><p>Talk to us about timing.</p></article>
+      <article class="card reveal"><div class="cnum">04</div><h3>Dried arrangements</h3><p>The house favourite.</p></article>
+      <article class="card reveal"><div class="cnum">05</div><h3>Funeral tributes</h3><p>Built around your schedule.</p></article>
+      <article class="card reveal"><div class="cnum">06</div><h3>Workshops</h3><p>The house favourite.</p></article>
     </div>
   </div></section>
 
   <section id="cta"><div class="wrap"><div class="ctaBand reveal">
-    <h2>Ready when you are.</h2>
+    <h2>Come see for yourself.</h2>
     <p style="opacity:.85;margin-bottom:20px">Tell us what you need.</p>
-    <a class="btn" href="#contact">Book now</a>
+    <a class="btn" href="#contact">Claim your spot</a>
   </div></div></section>
 </main>
 <footer class="site"><div class="wrap">
   <div class="footCols">
-    <div><a class="logo" href="#top" style="color:var(--ink)"><span class="logoDot"></span>EmberBind</a>
-      <p style="color:var(--inkSoft);font-size:.92rem;margin-top:10px;max-width:34ch">Books built for decades. EmberBind — bookbindery in Marrow Bay, since 2016.</p>
+    <div><a class="logo" href="#top" style="color:var(--ink)"><span class="logoDot"></span>The Amber Meadow</a>
+      <p style="color:var(--inkSoft);font-size:.92rem;margin-top:10px;max-width:34ch">This week, in season. The Amber Meadow — florist studio in Kirkwall, since 2016.</p>
       <div class="mega-only" style="margin-top:16px"><h4>First to know</h4><p style="color:var(--inkSoft);font-size:.9rem">Seasonal notes, once a month. No noise.</p>
       <form style="display:flex;gap:8px;margin-top:10px" onsubmit="event.preventDefault();this.innerHTML='<small>Thank you — you are on the list.</small>'">
         <input type="email" required placeholder="you@example.com" style="flex:1;min-height:44px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--btnR);background:var(--surface);color:var(--ink);font-family:var(--fb)"/>
         <button class="btn btnFill" style="min-height:44px">Join</button></form></div></div>
-    <div><h4>Explore</h4><ul><li><a href="#stats">Numbers</a></li><li><a href="#menu">Binding</a></li><li><a href="#testimonials">Reviews</a></li><li><a href="#services">Services</a></li><li><a href="#contact">Visit</a></li></ul></div>
-    <div><h4>Visit</h4><ul><li>70 the bindery bench</li><li>Marrow Bay</li><li><a href="mailto:hello@emberbind.site">hello@emberbind.site</a></li><li>+1 (243) 727-1204</li></ul></div>
+    <div><h4>Explore</h4><ul><li><a href="#about">About</a></li><li><a href="#gallery">Work</a></li><li><a href="#menu">This</a></li><li><a href="#faq">FAQ</a></li><li><a href="#services">Services</a></li></ul></div>
+    <div><h4>Visit</h4><ul><li>37 the flower corner</li><li>Kirkwall</li><li><a href="mailto:hello@theambermeadow.site">hello@theambermeadow.site</a></li><li>+1 (973) 449-5895</li></ul></div>
     <div><h4>Legal</h4><ul><li><a href="#top">Privacy</a></li><li><a href="#top">Terms</a></li><li><a href="#top">Accessibility</a></li></ul></div>
   </div>
   <div class="copy">
     <span>© <span class="stamp">2026</span> Beast Studio. All rights reserved.</span>
-    <span class="stamp">Grown by Beast Web Developer · seed 785e2fa5 · Crimson Vista / poster hero</span>
+    <span class="stamp">Grown by Beast Web Developer · seed sample-f · Amethyst Atelier / marquee hero</span>
   </div>
 </div></footer>
-<div class="mbar"><a class="btn btnFill" href="tel:+12437271204">Call</a><a class="btn btnGhost" href="#contact" style="background:var(--bg)">Book</a></div>
+<div class="mbar"><a class="btn btnFill" href="tel:+19734495895">Call</a><a class="btn btnGhost" href="#contact" style="background:var(--bg)">Book</a></div>
 <script>
   var y=document.querySelectorAll('.stamp');for(var i=0;i<y.length;i++){if(y[i].textContent.length===4)y[i].textContent=new Date().getFullYear()}
   var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}})},{threshold:.12});

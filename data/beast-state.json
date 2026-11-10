@@ -1,5 +1,5 @@
 {
- "day": 9,
+ "day": 10,
  "lastRealTick": "2026-11-10",
  "owner": "Beast Studio",
  "sites": [
@@ -318,7 +318,7 @@
    "brand": "VelvetQuill",
    "nicheLabel": "bookbindery",
    "city": "Vesterby",
-   "stageIndex": 1,
+   "stageIndex": 2,
    "status": "in-studio",
    "price": 0,
    "startedDay": 8,
@@ -330,6 +330,10 @@
     {
      "day": 9,
      "entry": "VelvetQuill: brief locked (audience, tone, naming) — consulted “The Design of Everyday Things”, Don Norman 1988"
+    },
+    {
+     "day": 10,
+     "entry": "VelvetQuill: palette “Dusk Rally” locked (triadic, WCAG-corrected)"
     }
    ],
    "design": {
@@ -361,7 +365,7 @@
    "brand": "NorthHearth",
    "nicheLabel": "neighbourhood bakery",
    "city": "Kirkwall",
-   "stageIndex": 1,
+   "stageIndex": 2,
    "status": "in-studio",
    "price": 0,
    "startedDay": 8,
@@ -373,6 +377,10 @@
     {
      "day": 9,
      "entry": "NorthHearth: brief locked (audience, tone, naming) — consulted “Designing Interfaces”, Jenifer Tidwell 2005"
+    },
+    {
+     "day": 10,
+     "entry": "NorthHearth: palette “Ember Dusk” locked (tetradic, WCAG-corrected)"
     }
    ],
    "design": {
@@ -404,7 +412,7 @@
    "brand": "EmberBean",
    "nicheLabel": "coffee roastery",
    "city": "Marrow Bay",
-   "stageIndex": 1,
+   "stageIndex": 2,
    "status": "in-studio",
    "price": 0,
    "startedDay": 8,
@@ -416,6 +424,10 @@
     {
      "day": 9,
      "entry": "EmberBean: brief locked (audience, tone, naming) — consulted “A Project Guide to UX Design”, Russ Unger & Carolyn Chandler 2009"
+    },
+    {
+     "day": 10,
+     "entry": "EmberBean: palette “Dusk Rally” locked (analogous, WCAG-corrected)"
     }
    ],
    "design": {
@@ -443,6 +455,15 @@
   }
  ],
  "log": [
+  {
+   "day": 10,
+   "date": "sim-day-10",
+   "jobs": [
+    "VelvetQuill: palette “Dusk Rally” locked (triadic, WCAG-corrected)",
+    "NorthHearth: palette “Ember Dusk” locked (tetradic, WCAG-corrected)",
+    "EmberBean: palette “Dusk Rally” locked (analogous, WCAG-corrected)"
+   ]
+  },
   {
    "day": 9,
    "date": "sim-warmup-9",

@@ -57,6 +57,70 @@ export function contrast(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
+function hexToHsl(hex: string): [number, number, number] {
+  const [r0, g0, b0] = hexToRgb(hex).map((v) => v / 255) as [number, number, number];
+  const max = Math.max(r0, g0, b0);
+  const min = Math.min(r0, g0, b0);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l * 100];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h = 0;
+  if (max === r0) h = ((g0 - b0) / d + (g0 < b0 ? 6 : 0)) * 60;
+  else if (max === g0) h = ((b0 - r0) / d + 2) * 60;
+  else h = ((r0 - g0) / d + 4) * 60;
+  return [h, s * 100, l * 100];
+}
+
+/* ---------- dark-mode derivation ----------
+   Research rule (MDN prefers-color-scheme; AdaGuard dark-mode WCAG study):
+   dark mode must be a re-derived semantic token set, not an inverted
+   image — every token re-run through its own contrast pass. */
+export type DarkTokens = {
+  bg: string;
+  bgAlt: string;
+  surface: string;
+  ink: string;
+  inkSoft: string;
+  inkOnAccent: string;
+  accent: string;
+  accent2: string;
+  border: string;
+};
+
+export function deriveDarkTokens(p: Palette): { tokens: DarkTokens; report: ContrastPair[] } {
+  const [hBg] = hexToHsl(p.bg);
+  const [hAcc] = hexToHsl(p.accent);
+  const [hAcc2] = hexToHsl(p.accent2);
+
+  const bg = hslToHex(hBg, Math.min(20, hexToHsl(p.bg)[1]), 7);
+  const bgAlt = hslToHex(hBg, Math.min(22, hexToHsl(p.bg)[1]), 12);
+  const surface = hslToHex(hBg, Math.min(18, hexToHsl(p.bg)[1]), 16);
+  const border = hslToHex(hBg, 12, 25);
+
+  const ink = ensureContrast(hBg, 14, 93, bg, 7, 'lighten').hex;
+  const inkSoft = ensureContrast(hBg, 12, 70, bg, 4.5, 'lighten').hex;
+
+  const accentRaw = hslToHex(hAcc, Math.max(55, hexToHsl(p.accent)[1]), 62);
+  let accent = contrast(accentRaw, bg) >= 3 ? accentRaw : ensureContrast(hAcc, Math.max(55, hexToHsl(p.accent)[1]), 62, bg, 3, 'lighten').hex;
+  const accent2 = hslToHex(hAcc2, Math.max(35, hexToHsl(p.accent2)[1]), 48);
+
+  // text on accent: solved on the accent axis (white vs black, else accent to an extreme)
+  const black = hslToHex(hBg, 30, 8);
+  const solved = solveOnAccent(accent, black, false);
+  accent = solved.accent;
+  const inkOnAccent = solved.inkOnAccent;
+
+  const tokens: DarkTokens = { bg, bgAlt, surface, ink, inkSoft, inkOnAccent, accent, accent2, border };
+  const report: ContrastPair[] = [
+    { pair: 'dark ink / dark bg', ratio: +contrast(ink, bg).toFixed(2), target: 7, pass: contrast(ink, bg) >= 7 },
+    { pair: 'dark inkSoft / dark bg', ratio: +contrast(inkSoft, bg).toFixed(2), target: 4.5, pass: contrast(inkSoft, bg) >= 4.5 },
+    { pair: 'dark accent / dark bg', ratio: +contrast(accent, bg).toFixed(2), target: 3, pass: contrast(accent, bg) >= 3 },
+    { pair: 'dark inkOnAccent / dark accent', ratio: +contrast(inkOnAccent, accent).toFixed(2), target: 4.5, pass: contrast(inkOnAccent, accent) >= 4.5 },
+  ];
+  return { tokens, report };
+}
+
 /* ---------- harmony engine ---------- */
 const HARMONIES = ['analogous', 'complementary', 'triadic', 'split-complementary', 'monochrome', 'tetradic'] as const;
 
@@ -103,6 +167,25 @@ function ensureContrast(h: number, s: number, l: number, against: string, target
   return { hex, l: cur };
 }
 
+/**
+ * Text-on-accent, solved on the correct axis (Williams C — measured, never eyeballed).
+ * Pick white or black — whichever clears 4.5:1 against the accent. If NEITHER does,
+ * the accent itself is a midtone: push it toward an extreme (away from the bg's
+ * luminance, which also keeps accent/bg ≥ 3:1) until one of them clears, then re-choose.
+ */
+function solveOnAccent(accentHex: string, blackHex: string, bgIsLight: boolean): { accent: string; inkOnAccent: string } {
+  const white = '#ffffff';
+  let accent = accentHex;
+  const [, , l0] = hexToHsl(accentHex);
+  let l = l0;
+  for (let i = 0; i < 60 && contrast(white, accent) < 4.5 && contrast(blackHex, accent) < 4.5; i++) {
+    l = bgIsLight ? Math.max(2, l - 2) : Math.min(98, l + 2);
+    accent = hslToHex(hexToHsl(accentHex)[0], hexToHsl(accentHex)[1], l);
+  }
+  const inkOnAccent = contrast(white, accent) >= 4.5 ? white : blackHex;
+  return { accent, inkOnAccent };
+}
+
 export function buildPalette(rng: RNG): Palette {
   const theme = rng.pick(['light', 'light', 'dark', 'duotone'] as const);
   const harmony = rng.pick(HARMONIES);
@@ -125,15 +208,16 @@ export function buildPalette(rng: RNG): Palette {
   // accents: vivid but legible as large/UI colour on bg (≥ 3:1)
   const a1s = rng.int(52, 88);
   const accentRaw = hslToHex(hue2, a1s, theme === 'dark' ? rng.int(55, 68) : rng.int(38, 52));
-  const accent = contrast(accentRaw, bg) >= 3
+  let accent = contrast(accentRaw, bg) >= 3
     ? accentRaw
     : ensureContrast(hue2, a1s, theme === 'dark' ? 62 : 42, bg, 3, theme === 'dark' ? 'lighten' : 'darken').hex;
   const accent2 = hslToHex(hue3, rng.int(30, 60), theme === 'dark' ? rng.int(40, 55) : rng.int(30, 45));
 
-  // text on accent: pick whichever of white/black clears 4.5, else darken accent
-  const white = '#ffffff';
+  // text on accent: solved on the accent axis itself (white vs black, else accent pushed to an extreme)
   const black = hslToHex(baseHue, 30, 8);
-  const inkOnAccent = contrast(white, accent) >= 4.5 ? white : contrast(black, accent) >= 4.5 ? black : ensureContrast(hue2, a1s, 32, white, 4.5, 'darken').hex;
+  const solved = solveOnAccent(accent, black, theme !== 'dark');
+  accent = solved.accent;
+  const inkOnAccent = solved.inkOnAccent;
 
   const border = theme === 'dark' ? hslToHex(baseHue, rng.int(8, 14), rng.int(22, 28)) : hslToHex(baseHue, rng.int(8, 14), rng.int(84, 88));
 

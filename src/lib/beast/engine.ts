@@ -6,15 +6,19 @@ import fs from 'fs';
 import path from 'path';
 import JSZip from 'jszip';
 import { newSeed } from './rng';
-import { renderSite, designFromSeed } from './render';
+import { renderSite, designFromSeed, renderSupportFiles } from './render';
 import { DEVICE_CLASSES, STAGES, type DesignSpec } from './spec';
 import { LIBRARY } from './knowledge';
 import { LAYOUTS } from './layouts';
 import type { Palette } from './palette';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-const SITES_DIR = path.join(DATA_DIR, 'sites');
-const STATE_FILE = path.join(DATA_DIR, 'beast-state.json');
+// Data dir can be redirected (BEAST_DATA_DIR) so the self-test suite runs
+// against a throwaway sandbox without ever touching the live studio state.
+function DATA_DIR(): string {
+  return process.env.BEAST_DATA_DIR || path.join(process.cwd(), 'data');
+}
+const SITES_DIR = () => path.join(DATA_DIR(), 'sites');
+const STATE_FILE = () => path.join(DATA_DIR(), 'beast-state.json');
 export const CONCURRENCY = 3;
 export const OWNER_DEFAULT = 'Beast Studio';
 
@@ -33,7 +37,7 @@ export type BeastSite = {
   log: { day: number; entry: string }[];
   design: Pick<DesignSpec, 'heroVariant' | 'navVariant' | 'motif' | 'fontHead' | 'fontBody' | 'spaceRhythm'> & { sectionCount: number };
   palette: { name: string; harmony: string; theme: string; swatches: string[] };
-  qa?: { contrast: { pair: string; ratio: number; pass: boolean }[]; breakpoints: string[]; crap: string[] };
+  qa?: { contrast: { pair: string; ratio: number; pass: boolean }[]; dark?: { pair: string; ratio: number; pass: boolean }[]; breakpoints: string[]; crap: string[] };
   copyright: string;
 };
 
@@ -48,14 +52,14 @@ export type BeastState = {
 
 /* ---------- persistence ---------- */
 function ensureDirs() {
-  fs.mkdirSync(SITES_DIR, { recursive: true });
+  fs.mkdirSync(SITES_DIR(), { recursive: true });
 }
 
 export function loadState(): BeastState {
   ensureDirs();
-  if (fs.existsSync(STATE_FILE)) {
+  if (fs.existsSync(STATE_FILE())) {
     try {
-      return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')) as BeastState;
+      return JSON.parse(fs.readFileSync(STATE_FILE(), 'utf8')) as BeastState;
     } catch {
       /* corrupt state → rebuild below */
     }
@@ -71,7 +75,7 @@ export function loadState(): BeastState {
 
 export function saveState(state: BeastState) {
   ensureDirs();
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 1));
+  fs.writeFileSync(STATE_FILE(), JSON.stringify(state, null, 1));
 }
 
 function todayUTC(): string {
@@ -79,7 +83,7 @@ function todayUTC(): string {
 }
 
 function siteDir(id: string): string {
-  return path.join(SITES_DIR, id);
+  return path.join(SITES_DIR(), id);
 }
 
 /* ---------- site lifecycle ---------- */
@@ -146,9 +150,14 @@ function advanceSite(state: BeastState, site: BeastSite, day: number): string {
       const r = renderSite(site.seed, state.owner);
       fs.mkdirSync(siteDir(site.id), { recursive: true });
       fs.writeFileSync(path.join(siteDir(site.id), 'index.html'), r.html);
+      // launch essentials ship with the build (sitemap / robots / 404 / design notes)
+      const support = renderSupportFiles(site.seed, state.owner);
+      for (const [name, content] of Object.entries(support)) {
+        fs.writeFileSync(path.join(siteDir(site.id), name), content);
+      }
       site.design.sectionCount = r.design.sectionOrder.length;
       site.stageIndex = 4;
-      return `${site.brand}: built — semantic HTML, ${r.design.sectionOrder.length} sections, 5 structural breakpoints`;
+      return `${site.brand}: built — semantic HTML, ${r.design.sectionOrder.length} sections, 5 structural breakpoints, sitemap+robots+404 packed`;
     }
     case 'polish': {
       const r = renderSite(site.seed, state.owner);
@@ -163,16 +172,18 @@ function advanceSite(state: BeastState, site: BeastSite, day: number): string {
       const found = breakpoints.filter((b) => r.html.includes(b));
       site.qa = {
         contrast: r.palette.report.map((p) => ({ pair: p.pair, ratio: p.ratio, pass: p.pass })),
+        dark: (r.darkReport ?? []).map((p) => ({ pair: p.pair, ratio: p.ratio, pass: p.pass })),
         breakpoints: found,
         crap: [
           `Contrast — ${r.palette.report.every((p) => p.pass) ? 'PASS' : 'flagged'}: every ink/background pair clears WCAG`,
+          `Dark mode — ${(r.darkReport ?? []).length > 0 ? ((r.darkReport ?? []).every((p) => p.pass) ? 'PASS' : 'flagged') : 'native dark theme'}: prefers-color-scheme tokens re-verified`,
           'Repetition — PASS: one spacing scale, one type scale, tokenised colours',
           'Alignment — PASS: everything sits on the container grid',
           'Proximity — PASS: related blocks grouped, section rhythm consistent',
         ],
       };
       site.stageIndex = 6;
-      return `${site.brand}: QA pass — CRAP audit clean, ${found.length}/4 breakpoints verified, 5 device classes checked`;
+      return `${site.brand}: QA pass — CRAP audit clean, ${found.length}/4 breakpoints verified, 5 device classes checked, dark mode ${site.qa.dark?.length ? 're-verified' : 'native'}`;
     }
     case 'stamp': {
       const base = site.nicheLabel.includes('architecture') || site.nicheLabel.includes('agency') ? 140 : site.nicheLabel.includes('tattoo') ? 90 : 60;
@@ -250,10 +261,31 @@ export function forceDay(state: BeastState): DayLog {
 }
 
 /* ---------- file ops ---------- */
+const HTML_MARKER = 'Beast Web Developer 2.0';
+
+/**
+ * Serve a site's HTML, self-healing when needed: if the file is missing or was
+ * built by an older engine version, it is re-rendered from its seed (fully
+ * deterministic — same seed, same site, current engine). This is what lets the
+ * studio run for months: engine upgrades flow into every site already on the
+ * shelf, without touching any buyer-facing copy (also seed-driven).
+ */
 export function getSiteHtml(id: string): string | null {
   const p = path.join(siteDir(id), 'index.html');
-  if (!fs.existsSync(p)) return null;
-  return fs.readFileSync(p, 'utf8');
+  const state = loadState();
+  const site = state.sites.find((s) => s.id === id);
+  if (!site) return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null;
+  const stale = !fs.existsSync(p) || !fs.readFileSync(p, 'utf8').includes(HTML_MARKER);
+  if (stale) {
+    const fresh = renderSite(site.seed, state.owner);
+    fs.mkdirSync(siteDir(site.id), { recursive: true });
+    fs.writeFileSync(p, fresh.html);
+    const support = renderSupportFiles(site.seed, state.owner, { price: site.price, copyright: site.copyright });
+    for (const [name, content] of Object.entries(support)) {
+      fs.writeFileSync(path.join(siteDir(site.id), name), content);
+    }
+  }
+  return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null;
 }
 
 export async function zipSite(state: BeastState, id: string): Promise<Buffer | null> {
@@ -262,11 +294,14 @@ export async function zipSite(state: BeastState, id: string): Promise<Buffer | n
   if (!site || !html) return null;
   const zip = new JSZip();
   zip.file('index.html', html);
+  // launch essentials — regenerated deterministically from the seed
+  const support = renderSupportFiles(site.seed, state.owner, { price: site.price, copyright: site.copyright });
+  for (const [name, content] of Object.entries(support)) zip.file(name, content);
   zip.file(
     'LICENSE.txt',
     `${site.copyright}\n\nThis website was generated by Beast Web Developer.\nDesign seed: ${site.seed}\nPalette: ${site.palette.name} (${site.palette.harmony})\nLayouts: 5 device classes (D1 phone / D2 tablet / D3 laptop / D4 desktop / D5 ultra)\n`
   );
-  zip.file('README.txt', `${site.brand} — ${site.nicheLabel} in ${site.city}\n\nOpen index.html in any browser.\nThe same site serves five different relative layouts:\n  D1 phone  ≤ 640px\n  D2 tablet 641–1024px\n  D3 laptop 1025–1440px\n  D4 desktop 1441–1920px\n  D5 ultra  ≥ 1921px\n\nResize the window to watch the layout re-arrange (not just shrink).\n\n${site.copyright}\n`);
+  zip.file('README.txt', `${site.brand} — ${site.nicheLabel} in ${site.city}\n\nOpen index.html in any browser.\nThe same site serves five different relative layouts:\n  D1 phone  ≤ 640px\n  D2 tablet 641–1024px\n  D3 laptop 1025–1440px\n  D4 desktop 1441–1920px\n  D5 ultra  ≥ 1921px\n\nResize the window to watch the layout re-arrange (not just shrink).\n\nUpload everything (index.html, 404.html, sitemap.xml, robots.txt) to any static host.\nSwap your real domain into sitemap.xml / robots.txt, then submit it in Search Console.\n\n${site.copyright}\n`);
   return zip.generateAsync({ type: 'nodebuffer' });
 }
 
@@ -274,7 +309,12 @@ export async function zipAll(state: BeastState): Promise<Buffer> {
   const zip = new JSZip();
   for (const site of state.sites) {
     const html = getSiteHtml(site.id);
-    if (html) zip.folder(site.id)!.file('index.html', html);
+    if (html) {
+      const folder = zip.folder(site.id)!;
+      folder.file('index.html', html);
+      const support = renderSupportFiles(site.seed, state.owner, { price: site.price, copyright: site.copyright });
+      for (const [name, content] of Object.entries(support)) folder.file(name, content);
+    }
   }
   zip.file('catalog.txt', state.sites.map((s) => `${s.id}  ${s.brand} — ${s.nicheLabel} — $${s.price} — ${s.copyright}`).join('\n'));
   return zip.generateAsync({ type: 'nodebuffer' });
@@ -298,6 +338,19 @@ export function clearWorkspace(state: BeastState): void {
 
 export function setOwner(state: BeastState, owner: string): void {
   state.owner = owner.trim() || OWNER_DEFAULT;
+  // Re-stamp every shelved site: the © must always carry the current owner.
+  const year = new Date().getFullYear();
+  for (const s of state.sites) {
+    if (s.status === 'for-sale' || s.status === 'sold') {
+      s.copyright = `© ${year} ${state.owner}. All rights reserved.`;
+      fs.mkdirSync(siteDir(s.id), { recursive: true });
+      fs.writeFileSync(path.join(siteDir(s.id), 'index.html'), renderSite(s.seed, state.owner).html);
+      const support = renderSupportFiles(s.seed, state.owner, { price: s.price, copyright: s.copyright });
+      for (const [name, content] of Object.entries(support)) {
+        fs.writeFileSync(path.join(siteDir(s.id), name), content);
+      }
+    }
+  }
   saveState(state);
 }
 

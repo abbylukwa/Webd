@@ -4,15 +4,29 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>The Cedar Brass — jazz bar in Bellhaven</title>
+<meta name="generator" content="Beast Web Developer 2.0"/>
 <meta name="description" content="Music you lean into. The Cedar Brass, a jazz bar in Bellhaven. we pay the musicians properly and it shows in the third set, and we do it in Bellhaven — jazz bar for people who notice the details."/>
+<meta name="theme-color" content="#f5eff4" media="(prefers-color-scheme: light)"/><meta name="theme-color" content="#150e14" media="(prefers-color-scheme: dark)"/>
+<meta name="color-scheme" content="light dark"/>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20rx%3D'14'%20fill%3D'%23db0f7c'%2F%3E%3Ctext%20x%3D'32'%20y%3D'43'%20font-family%3D'Arial%2Csans-serif'%20font-size%3D'34'%20font-weight%3D'800'%20text-anchor%3D'middle'%20fill%3D'%23ffffff'%3EC%3C%2Ftext%3E%3C%2Fsvg%3E"/>
+<meta property="og:type" content="website"/>
+<meta property="og:site_name" content="The Cedar Brass"/>
+<meta property="og:title" content="The Cedar Brass — jazz bar in Bellhaven"/>
+<meta property="og:description" content="Music you lean into."/>
+<meta property="og:locale" content="en_US"/>
+<meta name="twitter:card" content="summary"/>
+<meta name="twitter:title" content="The Cedar Brass — jazz bar in Bellhaven"/>
+<meta name="twitter:description" content="Music you lean into."/>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BarOrPub","name":"The Cedar Brass","description":"Music you lean into. The Cedar Brass — jazz bar in Bellhaven.","email":"hello@thecedarbrass.site","telephone":"+1 (808) 778-7877","priceRange":"$14–$112","address":{"@type":"PostalAddress","streetAddress":"86 the cellar door","addressLocality":"Bellhaven","addressCountry":"US"},"openingHoursSpecification":[{"@type":"OpeningHoursSpecification","dayOfWeek":["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"],"opens":"09:00","closes":"19:00"},{"@type":"OpeningHoursSpecification","dayOfWeek":["Sunday"],"opens":"10:00","closes":"14:00"}]}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&family=Work+Sans:wght@400;500;700&display=swap" rel="stylesheet"/>
 <style>
 :root{
   --bg:#f5eff4;--bgAlt:#f0ebee;--surface:#ffffff;--ink:#2a1d27;--inkSoft:#65495d;
-  --accent:#e51081;--accent2:#90318a;--onAccent:#990b56;--border:#e3dee2;
+  --accent:#db0f7c;--accent2:#90318a;--onAccent:#ffffff;--border:#e3dee2;
   --navBg:#f5eff4;--navInk:#2a1d27;
+  color-scheme:light;
   --fh:'Bricolage Grotesque',serif;--fb:'Work Sans',sans-serif;
   --radius:4px;--btnR:0px;
   --container:100%;--gut:16px;--spSec:52.8px;--fx:1;
@@ -26,6 +40,7 @@ a{color:inherit;text-decoration:none}
 :focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:2px}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 .ambient{position:fixed;inset:0;z-index:-1;pointer-events:none}
+.ambient{opacity:.5;background:radial-gradient(120% 90% at 50% -20%,transparent 60%,color-mix(in srgb,var(--accent) 9%,transparent) 100%);}
 .wrap{width:var(--container);margin-inline:auto;padding-inline:var(--gut)}
 section{padding-block:var(--spSec)}
 h1,h2,h3{font-family:var(--fh);line-height:1.08;letter-spacing:-.01em}
@@ -41,9 +56,9 @@ h3{font-size:clamp(1.05rem,2vw,calc(1.3rem*var(--fx)));font-weight:600}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:56px;padding:12px 24px;border-radius:var(--btnR);font-weight:700;font-size:.95rem;border:2px solid transparent;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,background .18s ease}
 .btn:active{transform:translateY(1px)}
 .btnFill{background:var(--accent);color:var(--onAccent)}
-.btnFill:hover{box-shadow:0 10px 24px -10px #e5108188;transform:translateY(-1px)}
+.btnFill:hover{box-shadow:0 10px 24px -10px color-mix(in srgb,var(--accent) 53%,transparent);transform:translateY(-1px)}
 .btnGhost{border-color:var(--ink);color:var(--ink);background:transparent}
-.btnGhost:hover{background:#2a1d270d}
+.btnGhost:hover{background:color-mix(in srgb,var(--ink) 5%,transparent)}
 /* NAV — D1: drawer */
 .nav{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--navBg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
 .navIn{display:flex;align-items:center;justify-content:space-between;min-height:64px;gap:16px}
@@ -64,7 +79,7 @@ h3{font-size:clamp(1.05rem,2vw,calc(1.3rem*var(--fx)));font-weight:600}
 .secHead{margin-bottom:34px;display:flex;flex-direction:column;gap:10px}
 .gridFeat{display:grid;grid-template-columns:1fr;gap:14px}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px;transition:transform .2s ease,box-shadow .2s ease}
-.card:hover{transform:translateY(-3px);box-shadow:0 18px 40px -22px #2a1d2755}
+.card:hover{transform:translateY(-3px);box-shadow:0 18px 40px -22px color-mix(in srgb,var(--ink) 33%,transparent)}
 .card .cnum{font-variant-numeric:tabular-nums;color:var(--accent);font-weight:800;font-size:.8rem;letter-spacing:.1em}
 .card p{color:var(--inkSoft);font-size:.95rem;margin-top:8px}
 .gridGal{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
@@ -98,6 +113,16 @@ h3{font-size:clamp(1.05rem,2vw,calc(1.3rem*var(--fx)));font-weight:600}
 .cbox h3{margin-bottom:8px}
 .cbox p,.cbox li{color:var(--inkSoft);font-size:.95rem}
 .cbox ul{list-style:none;display:grid;gap:6px}
+.cform{margin-top:34px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:26px;display:grid;gap:14px;max-width:640px}
+.cform h3{margin:0}
+.cform label{display:grid;gap:6px;font-size:.85rem;font-weight:600;color:var(--inkSoft)}
+.cform input,.cform textarea{font-family:var(--fb);font-size:1rem;color:var(--ink);background:var(--bg);border:1px solid var(--border);border-radius:calc(var(--radius) * .6);padding:12px 14px;min-height:44px}
+.cform textarea{resize:vertical}
+.cform input:focus-visible,.cform textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.cform .frow{display:grid;gap:14px}
+.cform small{color:var(--inkSoft);font-size:.8rem}
+.skip{position:absolute;left:-9999px;top:0;z-index:100;background:var(--accent);color:var(--onAccent);padding:12px 18px;font-weight:700;border-radius:0 0 var(--radius) 0}
+.skip:focus{left:0}
 /* footer */
 footer.site{border-top:1px solid var(--border);padding:40px 0 calc(28px + env(safe-area-inset-bottom));background:var(--bgAlt)}
 .footCols{display:grid;grid-template-columns:1fr;gap:24px}
@@ -187,9 +212,15 @@ body{padding-bottom:76px}
   .footCols ul{justify-items:center}
 }
 .stats-unlock{display:none}
+/* ============ OS dark mode — re-derived token set (MDN prefers-color-scheme;
+   every token re-passes its own WCAG contrast check, see QA report) ============ */
+@media (prefers-color-scheme:dark){
+  :root{--bg:#150e14;--bgAlt:#251823;--surface:#30212e;--ink:#f0ebef;--inkSoft:#bca9b9;--accent:#f34aa4;--accent2:#b73eaf;--onAccent:#1b0e18;--border:#473845;--navBg:#150e14;--navInk:#f0ebef;color-scheme:dark}
+}
 </style>
 </head>
 <body data-hero="split" data-motif="arc">
+<a class="skip" href="#main">Skip to content</a>
 <div class="ambient" aria-hidden="true"></div>
 <header class="nav"><div class="wrap navIn">
   <a class="logo" href="#top"><span class="logoDot"></span>The Cedar Brass</a>
@@ -203,7 +234,7 @@ body{padding-bottom:76px}
   <a class="dl" href="#stats">Numbers</a><a class="dl" href="#menu">Tonight</a><a class="dl" href="#about">About</a><a class="dl" href="#testimonials">Reviews</a><a class="dl" href="#services">Services</a>
   <a class="btn btnFill" href="#contact" onclick="document.getElementById('drawer').classList.remove('open')">Book a visit</a>
 </nav>
-<main>
+<main id="main">
 
   <section class="hero" id="top"><div class="wrap heroWrap">
     <div class="hcopy reveal">
@@ -215,7 +246,7 @@ body{padding-bottom:76px}
         <a class="btn btnGhost" href="#stats">See the jazz</a>
       </div>
     </div>
-    <div class="hvisual reveal" style="background:linear-gradient(135deg,#e51081,#90318a)">
+    <div class="hvisual reveal" style="background:linear-gradient(135deg,#db0f7c,#90318a)">
       <span class="heroBadge">The Cedar Brass</span>
     </div>
   </div></section>
@@ -273,7 +304,7 @@ body{padding-bottom:76px}
         <input type="email" required placeholder="you@example.com" style="flex:1;min-height:44px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--btnR);background:var(--surface);color:var(--ink);font-family:var(--fb)"/>
         <button class="btn btnFill" style="min-height:44px">Join</button></form></div></div>
     <div><h4>Explore</h4><ul><li><a href="#stats">Numbers</a></li><li><a href="#menu">Tonight</a></li><li><a href="#about">About</a></li><li><a href="#testimonials">Reviews</a></li><li><a href="#services">Services</a></li></ul></div>
-    <div><h4>Visit</h4><ul><li>104 the cellar door</li><li>Bellhaven</li><li><a href="mailto:hello@thecedarbrass.site">hello@thecedarbrass.site</a></li><li>+1 (808) 778-7877</li></ul></div>
+    <div><h4>Visit</h4><ul><li>86 the cellar door</li><li>Bellhaven</li><li><a href="mailto:hello@thecedarbrass.site">hello@thecedarbrass.site</a></li><li>+1 (808) 778-7877</li></ul></div>
     <div><h4>Legal</h4><ul><li><a href="#top">Privacy</a></li><li><a href="#top">Terms</a></li><li><a href="#top">Accessibility</a></li></ul></div>
   </div>
   <div class="copy">
