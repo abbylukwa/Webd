@@ -1,723 +1,584 @@
-"use client";
+'use client';
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Progress } from '@/components/ui/progress';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
+import { useToast } from '@/hooks/use-toast';
+import { LAYOUTS, specSummary } from '@/lib/beast/layouts';
+import { LIBRARY } from '@/lib/beast/knowledge';
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
-  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import { useToast } from "@/hooks/use-toast";
-import {
-  Hammer, Library, Settings2, Download, ExternalLink, Trash2, Sparkles,
-  Clock, Eye, FlaskConical, KeyRound, Plus, X, Github, SunMoon,
-} from "lucide-react";
+  Download, Trash2, Eye, FastForward, Package, Github, Keyboard, Ruler, Palette as PaletteIcon,
+  Layers, Infinity as InfinityIcon, BookOpen, ShieldCheck, MonitorSmartphone,
+} from 'lucide-react';
 
-// ─── Types (mirror of the server read model) ──────────────────────────
-interface DelibLine { t: number; phase: string; text: string }
-interface JobView {
-  id: string; name: string; archetypeId: string; archetypeLabel: string;
-  status: string; workbench: number | null; phaseIndex: number;
-  phaseLabel: string; phaseVerb: string; phaseProgress: number; overallProgress: number;
-  design: { paletteId: string; paletteName: string; pairingName: string; heroVariant: string; layoutId: string; layoutName: string; layoutSource: string; readingPattern: string; colors: { bg: string; surface: string; ink: string; accent: string } };
-  deliberation: DelibLine[]; etaRealMinutes: number | null;
-  commissionedAt: string; shippedAt: string | null;
-  audit: { grade: string; contrast: { pass: boolean; detail: string } } | null;
-  hasHtml: boolean; wordCount: number | null;
-}
-interface StudioState {
-  settings: { copyrightHolder: string; copyrightNote: string; pace: number; workbenches: number; autoRespawn: boolean; vaultCount: number };
-  active: JobView[]; shipped: JobView[];
-  stats: { shipped: number; active: number; beastHours: number; daysRunning: number; sitesPerDay: number; totalPhases: number };
-  schedule: { date: string; label: string; forecast: number }[];
-  phases: { key: string; label: string; minutes: number }[];
-}
-interface VaultView { id: string; label: string; provider: string; masked: string; addedAt: string; lastStatus: string }
-interface BookLesson { id: string; title: string; author: string; year: number; doctrine: string[]; rules: string[]; powers: string }
-interface LayoutBook {
-  id: string; name: string; source: string; readingPattern: string; arrangement: string;
-  heroMode: string; sectionOrder: string[]; featuresMode: string; storyMode: string;
-  voicesMode: string; navMode: string; bestFor: string[]; mobile: string; specLine: string;
-  spec: { container: number; columns: number; gutter: number; cardCols: number[]; statsCols: number[]; quoteCols: number[]; breakpoints: number[]; itemGap: number; sectionPad: number[]; heroPadY: number[]; radiusScale: number };
-  crap: { C: string; R: string; A: string; P: string };
+/* ---------- types (mirror of API) ---------- */
+type Device = {
+  id: string; name: string; icon: string; range: string; previewWidth: number;
+  nav: string; hero: string; featureCols: number; galleryCols: number; footer: string;
+  container: string; gutter: string; typeNote: string; cta: string; extras: string[];
+};
+type Stage = { key: string; label: string; desc: string };
+type Site = {
+  id: string; brand: string; nicheLabel: string; city: string;
+  stageIndex: number; status: 'in-studio' | 'for-sale' | 'sold'; price: number; startedDay: number;
+  design: { heroVariant: string; navVariant: string; motif: string; fontHead: string; fontBody: string; spaceRhythm: string; sectionCount: number };
+  palette: { name: string; harmony: string; theme: string; swatches: string[] };
+  qa: null | { contrast: { pair: string; ratio: number; pass: boolean }[]; breakpoints: string[]; crap: string[] };
+  copyright: string; log: { day: number; entry: string }[];
+};
+type Status = {
+  day: number; owner: string; concurrency: number; stages: Stage[]; devices: Device[];
+  sites: Site[]; log: { day: number; date: string; jobs: string[] }[];
+};
+
+/* ---------- tiny building blocks ---------- */
+function Mono({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return <span className={`font-mono text-[11px] uppercase tracking-[0.14em] text-zinc-500 ${className}`}>{children}</span>;
 }
 
-function fmtEta(min: number | null): string {
-  if (min == null) return "—";
-  if (min < 1) return "moments";
-  if (min < 60) return `≈ ${Math.round(min)}m`;
-  const h = Math.floor(min / 60);
-  if (h < 36) return `≈ ${h}h ${Math.round(min % 60)}m`;
-  return `≈ ${Math.round(min / 1440)} days`;
-}
-
-// ─── Phase segment bar — the 11 deliberate steps ──────────────────────
-function PhaseBar({ job, phases }: { job: JobView; phases: { key: string; label: string; minutes: number }[] }) {
+function Swatches({ colors }: { colors: string[] }) {
   return (
-    <div className="flex gap-[3px]" role="progressbar" aria-valuenow={Math.round(job.overallProgress * 100)} aria-valuemin={0} aria-valuemax={100}>
-      {phases.map((p, i) => {
-        const done = i < job.phaseIndex;
-        const current = i === job.phaseIndex;
-        return (
-          <div
-            key={p.key}
-            title={`${p.label} · ${p.minutes} beast-min${done ? " · done" : current ? " · in progress" : ""}`}
-            className={`h-2 flex-1 rounded-full transition-all duration-700 ${done ? "bg-amber-400" : current ? "bg-amber-400/60 animate-pulse" : "bg-stone-800"}`}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
-function PaletteDots({ design }: { design: JobView["design"] }) {
-  const { bg, surface, ink, accent } = design.colors;
-  return (
-    <div className="flex items-center gap-1" title={`${design.paletteName} · ${design.pairingName}`}>
-      {[bg, surface, ink, accent].map((c, i) => (
-        <span key={i} className="h-3.5 w-3.5 rounded-full border border-white/15" style={{ background: c }} />
+    <div className="flex gap-1">
+      {colors.map((c, i) => (
+        <span key={i} title={c} className="h-5 w-5 rounded-md border border-white/10" style={{ background: c }} />
       ))}
     </div>
   );
 }
 
-function BeastMark({ size = 34 }: { size?: number }) {
+function StageTrack({ stages, site }: { stages: Stage[]; site: Site }) {
+  const pct = Math.min(100, Math.round((site.stageIndex / stages.length) * 100));
   return (
-    <div
-      className="relative flex items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 via-orange-500 to-rose-600 shadow-[0_0_24px_rgba(245,158,11,0.35)]"
-      style={{ width: size, height: size }}
-    >
-      <div className="flex gap-[3px]">
-        <span className="h-2 w-2 rounded-full bg-stone-950" />
-        <span className="h-2 w-2 rounded-full bg-stone-950" />
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <Mono>{stages[Math.min(site.stageIndex, stages.length - 1)]?.label ?? 'shipped'}</Mono>
+        <span className="font-mono text-[11px] text-lime-300">{pct}%</span>
+      </div>
+      <Progress value={pct} className="h-1.5 bg-zinc-800 [&>[data-slot=progress-indicator]]:bg-lime-300" />
+      <div className="flex flex-wrap gap-1">
+        {stages.map((s, i) => (
+          <span
+            key={s.key}
+            title={s.desc}
+            className={`h-1.5 w-6 rounded-full ${i < site.stageIndex ? 'bg-lime-300' : i === site.stageIndex ? 'bg-amber-300 animate-pulse' : 'bg-zinc-700'}`}
+          />
+        ))}
       </div>
     </div>
   );
 }
 
-export default function Studio() {
-  const [data, setData] = useState<StudioState | null>(null);
-  const [library, setLibrary] = useState<BookLesson[]>([]);
-  const [layouts, setLayouts] = useState<LayoutBook[]>([]);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [libraryOpen, setLibraryOpen] = useState(false);
-  const [preview, setPreview] = useState<JobView | null>(null);
-  const [confirmClear, setConfirmClear] = useState(false);
-  const [clearing, setClearing] = useState(false);
-  const [downloadingAll, setDownloadingAll] = useState(false);
-  const { toast } = useToast();
-  const dataRef = useRef<StudioState | null>(null);
-  dataRef.current = data;
-
-  const refresh = useCallback(async () => {
-    try {
-      const res = await fetch("/api/tick", { method: "POST", cache: "no-store" });
-      if (res.ok) setData(await res.json());
-    } catch {
-      /* the Beast keeps working even if a tick is dropped */
-    }
-  }, []);
-
-  useEffect(() => {
-    refresh();
-    fetch("/api/library")
-      .then((r) => (r.ok ? r.json() : { library: [], layouts: [] }))
-      .then((d) => {
-        setLibrary(d.library ?? []);
-        setLayouts(d.layouts ?? []);
-      })
-      .catch(() => {});
-    const iv = setInterval(() => {
-      if (document.visibilityState === "visible") refresh();
-    }, 4000);
-    return () => clearInterval(iv);
-  }, [refresh]);
-
-  const downloadOne = async (job: JobView) => {
-    try {
-      const res = await fetch(`/api/download/${job.id}`);
-      if (!res.ok) throw new Error();
-      const blob = await res.blob();
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = `${job.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.zip`;
-      a.click();
-      URL.revokeObjectURL(a.href);
-      toast({ title: "Site downloaded", description: `${job.name} is yours — index.html, design notes and license.` });
-      refresh();
-    } catch {
-      toast({ title: "Download failed", description: "Try again in a moment.", variant: "destructive" });
-    }
-  };
-
-  const downloadAndClear = async () => {
-    setDownloadingAll(true);
-    try {
-      const res = await fetch("/api/download-all");
-      if (!res.ok) {
-        toast({ title: "Nothing on the shelf yet", description: "The Beast hasn't shipped a site — give it a few beats." });
-        setDownloadingAll(false);
-        return;
-      }
-      const blob = await res.blob();
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = `beast-shelf-${new Date().toISOString().slice(0, 10)}.zip`;
-      a.click();
-      URL.revokeObjectURL(a.href);
-      setConfirmClear(false);
-      setClearing(true);
-      const cleared = await fetch("/api/clear", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({}),
-      }).then((r) => r.json());
-      toast({
-        title: "Shelf downloaded & cleared",
-        description: `${cleared.cleared ?? 0} site${cleared.cleared === 1 ? "" : "s"} are in your zip. The Beast starts the next commissions immediately.`,
-      });
-      setClearing(false);
-      await refresh();
-    } catch {
-      toast({ title: "Download failed", description: "Try again in a moment.", variant: "destructive" });
-      setClearing(false);
-    } finally {
-      setDownloadingAll(false);
-    }
-  };
-
-  const year = new Date().getFullYear();
-  const s = data?.settings;
-  const feed: (DelibLine & { name: string })[] =
-    data?.active.flatMap((j) => j.deliberation.slice(-4).map((d) => ({ ...d, name: j.name }))).sort((a, b) => a.t - b.t).slice(-14) ?? [];
-
+/* ---------- mini wireframes per device class ---------- */
+function Wire({ d }: { d: Device }) {
+  const bar = 'rounded-[2px] bg-zinc-700';
+  const acc = 'rounded-[2px] bg-lime-300';
+  const box = 'rounded-[3px] border border-zinc-700 bg-zinc-900';
   return (
-    <div className="min-h-screen flex flex-col bg-stone-950 text-stone-200 selection:bg-amber-400/30">
-      {/* ambient glow */}
-      <div aria-hidden className="pointer-events-none fixed inset-x-0 top-0 h-[420px] bg-[radial-gradient(60%_60%_at_50%_0%,rgba(245,158,11,0.13),transparent_70%)]" />
-
-      {/* ── Header ── */}
-      <header className="relative border-b border-stone-800/80 bg-stone-950/70 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-4 px-4 py-4 sm:px-6">
-          <BeastMark />
-          <div className="mr-auto">
-            <h1 className="font-[family-name:var(--font-fraunces)] text-xl font-bold tracking-tight text-stone-100 sm:text-2xl">
-              THE BEAST <span className="text-amber-400">·</span> <span className="text-stone-400 font-normal italic text-base sm:text-lg">autonomous web studio</span>
-            </h1>
-            <p className="text-xs text-stone-500">
-              Raised on 12 design books · {data?.stats.totalPhases ?? 11} deliberate phases per site · never rushed
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setLibraryOpen(true)} className="border-stone-700 bg-stone-900 hover:bg-stone-800 hover:text-amber-300">
-              <Library className="mr-1.5 h-4 w-4" /> Library
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)} className="border-stone-700 bg-stone-900 hover:bg-stone-800 hover:text-amber-300">
-              <Settings2 className="mr-1.5 h-4 w-4" /> Settings
-            </Button>
-          </div>
-        </div>
-      </header>
-
-      <main className="relative mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
-        {!data ? (
-          <div className="grid gap-4 pt-10">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="h-28 animate-pulse rounded-2xl border border-stone-800 bg-stone-900/50" />
-            ))}
-          </div>
-        ) : (
-          <>
-            {/* ── Stats band ── */}
-            <section aria-label="Studio stats" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-              {[
-                { label: "Sites shipped", value: data.stats.shipped, icon: Sparkles },
-                { label: "On the bench", value: data.stats.active, icon: Hammer },
-                { label: "Beast hours", value: data.stats.beastHours, icon: Clock },
-                { label: "Days in operation", value: data.stats.daysRunning, icon: SunMoon },
-                { label: "Sites / day (forecast)", value: data.stats.sitesPerDay, icon: FlaskConical },
-              ].map(({ label, value, icon: Icon }) => (
-                <Card key={label} className="border-stone-800 bg-stone-900/60">
-                  <CardContent className="flex items-center gap-3 p-4">
-                    <div className="rounded-lg bg-amber-400/10 p-2 text-amber-400"><Icon className="h-4 w-4" /></div>
-                    <div>
-                      <div className="font-[family-name:var(--font-fraunces)] text-2xl font-bold leading-none text-stone-100">{value}</div>
-                      <div className="mt-1 text-[11px] uppercase tracking-wide text-stone-500">{label}</div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </section>
-
-            <div className="mt-6 grid gap-6 lg:grid-cols-3">
-              {/* ── Workbenches ── */}
-              <section aria-label="Workbenches" className="lg:col-span-2">
-                <div className="mb-3 flex items-center justify-between">
-                  <h2 className="font-[family-name:var(--font-fraunces)] text-lg font-semibold text-stone-100">The workbenches</h2>
-                  <Badge variant="outline" className="border-amber-400/40 text-amber-300">{data.stats.workbenches} benches · pace ×{data.settings.pace}</Badge>
-                </div>
-                <div className="grid gap-4">
-                  {data.active.length === 0 && (
-                    <Card className="border-dashed border-stone-800 bg-stone-900/40">
-                      <CardContent className="p-6 text-center text-sm text-stone-500">All benches idle — the Beast respawns commissions on the next tick.</CardContent>
-                    </Card>
-                  )}
-                  {data.active.map((job) => (
-                    <Card key={job.id} className="border-stone-800 bg-stone-900/60 transition-colors hover:border-stone-700">
-                      <CardHeader className="flex flex-row items-start justify-between gap-3 p-4 pb-2">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge variant="secondary" className="bg-amber-400/10 text-amber-300 hover:bg-amber-400/10">Bench {job.workbench}</Badge>
-                            <CardTitle className="truncate font-[family-name:var(--font-fraunces)] text-lg text-stone-100">{job.name}</CardTitle>
-                            <Badge variant="outline" className="border-stone-700 text-stone-400">{job.archetypeLabel}</Badge>
-                          </div>
-                          <p className="mt-1.5 text-sm text-amber-200/80">{job.phaseVerb}…</p>
-                        </div>
-                        <PaletteDots design={job.design} />
-                      </CardHeader>
-                      <CardContent className="p-4 pt-0">
-                        <PhaseBar job={job} phases={data.phases} />
-                        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-stone-500">
-                          <span><span className="font-semibold text-stone-300">{job.phaseLabel}</span> — phase {Math.min(job.phaseIndex + 1, data.phases.length)} of {data.phases.length}</span>
-                          <span>{Math.round(job.overallProgress * 100)}% · {fmtEta(job.etaRealMinutes)} to ship</span>
-                        </div>
-                        <Progress value={job.overallProgress * 100} className="mt-2 h-1 bg-stone-800 [&>div]:bg-amber-400/70" />
-                        {job.deliberation.length > 0 && (
-                          <p className="mt-3 line-clamp-2 rounded-lg border border-stone-800 bg-stone-950/60 p-2.5 font-mono text-[11px] leading-relaxed text-stone-400">
-                            <span className="text-amber-400/90">beast:</span> {job.deliberation[job.deliberation.length - 1].text}
-                          </p>
-                        )}
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-
-                {/* ── Deliberation feed ── */}
-                <h2 className="mb-3 mt-8 font-[family-name:var(--font-fraunces)] text-lg font-semibold text-stone-100">Deliberation log — the Beast reasons out loud</h2>
-                <Card className="border-stone-800 bg-[#0b0a08]">
-                  <ScrollArea className="max-h-72">
-                    <CardContent className="p-4 font-mono text-[11.5px] leading-relaxed">
-                      {feed.length === 0 && <p className="text-stone-600">The Beast is warming up…</p>}
-                      {feed.map((l, i) => (
-                        <p key={i} className="py-0.5 text-stone-400">
-                          <span className="text-stone-600">{new Date(l.t).toLocaleTimeString("en-US", { hour12: false })}</span>{" "}
-                          <span className="text-amber-400/80">[{l.phase}]</span>{" "}
-                          <span className="text-stone-300">{l.name}:</span> {l.text}
-                        </p>
-                      ))}
-                    </CardContent>
-                  </ScrollArea>
-                </Card>
-              </section>
-
-              {/* ── Schedule ── */}
-              <section aria-label="Progress schedule">
-                <h2 className="mb-3 font-[family-name:var(--font-fraunces)] text-lg font-semibold text-stone-100">Progress schedule</h2>
-                <Card className="border-stone-800 bg-stone-900/60">
-                  <CardHeader className="p-4 pb-2">
-                    <CardTitle className="text-sm font-medium text-stone-400">Next 7 days — planned output</CardTitle>
-                  </CardHeader>
-                  <CardContent className="grid grid-cols-4 gap-2 p-4 pt-0 sm:grid-cols-7 lg:grid-cols-4">
-                    {data.schedule.map((d, i) => (
-                      <div key={d.date} className={`rounded-xl border p-2 text-center ${i === 0 ? "border-amber-400/50 bg-amber-400/10" : "border-stone-800 bg-stone-950/40"}`}>
-                        <div className={`text-[10px] uppercase tracking-wide ${i === 0 ? "text-amber-300" : "text-stone-500"}`}>{i === 0 ? "Today" : d.label.split(",")[0]}</div>
-                        <div className="mt-1 font-[family-name:var(--font-fraunces)] text-lg font-bold text-stone-100">{d.forecast}</div>
-                        <div className="text-[9px] text-stone-600">{d.label.split(",")[1] ?? d.label}</div>
-                      </div>
-                    ))}
-                  </CardContent>
-                  <CardContent className="p-4 pt-0 text-xs leading-relaxed text-stone-500">
-                    The Beast never idles: the moment a bench frees up, a fresh commission is accepted. Close this tab for a week — progress is counted in real time, and it all catches up on your return.
-                  </CardContent>
-                </Card>
-
-                {/* Bulk actions */}
-                <Card className="mt-4 border-amber-400/20 bg-gradient-to-b from-amber-400/[0.07] to-stone-900/60">
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-2">
-                      <Download className="h-4 w-4 text-amber-400" />
-                      <h3 className="text-sm font-semibold text-stone-200">The shelf</h3>
-                      <Badge className="ml-auto bg-amber-400 text-stone-950 hover:bg-amber-400">{data.shipped.length}</Badge>
-                    </div>
-                    <p className="mt-2 text-xs leading-relaxed text-stone-500">
-                      Finished sites wait here with your copyright stamped in every footer. Download them all, then clear the shelf — the Beast keeps building either way.
-                    </p>
-                    <div className="mt-3 flex flex-col gap-2">
-                      <Button
-                        className="w-full bg-amber-400 font-semibold text-stone-950 hover:bg-amber-300"
-                        disabled={data.shipped.length === 0 || downloadingAll}
-                        onClick={() => setConfirmClear(true)}
-                      >
-                        <Download className="mr-1.5 h-4 w-4" /> Download all &amp; clear shelf
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* API vault summary */}
-                <Card className="mt-4 border-stone-800 bg-stone-900/60">
-                  <CardContent className="flex items-center gap-3 p-4">
-                    <KeyRound className="h-4 w-4 text-amber-400" />
-                    <div className="mr-auto text-xs text-stone-500">
-                      AI key pool: <span className="font-semibold text-stone-300">{s?.vaultCount ?? 0}</span> key{(s?.vaultCount ?? 0) === 1 ? "" : "s"} · round-robin · cooldown
-                      <br /><span className="text-stone-600">Optional — the Beast writes its own copy without keys.</span>
-                    </div>
-                    <Button variant="ghost" size="sm" onClick={() => setSettingsOpen(true)} className="text-amber-300 hover:bg-stone-800 hover:text-amber-200">Manage</Button>
-                  </CardContent>
-                </Card>
-              </section>
-            </div>
-
-            {/* ── Shelf ── */}
-            <section aria-label="Shipped sites" className="mt-10">
-              <h2 className="mb-3 font-[family-name:var(--font-fraunces)] text-lg font-semibold text-stone-100">
-                The shelf <span className="text-stone-500">— shipped with © {year} {s?.copyrightHolder ?? ""}</span>
-              </h2>
-              {data.shipped.length === 0 ? (
-                <Card className="border-dashed border-stone-800 bg-stone-900/40">
-                  <CardContent className="p-8 text-center">
-                    <p className="text-sm text-stone-500">Nothing shipped yet. First sites land on the shelf in about 15 beast-hours of work — watch the benches.</p>
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {data.shipped.map((job) => (
-                    <Card key={job.id} className="group overflow-hidden border-stone-800 bg-stone-900/60 transition-colors hover:border-amber-400/40">
-                      <div className="relative h-28 overflow-hidden border-b border-stone-800" style={{ background: job.design.colors.bg }}>
-                        <div className="absolute inset-0 opacity-90 transition-transform duration-700 group-hover:scale-[1.04]">
-                          <div className="absolute left-5 top-5 h-3 w-24 rounded-sm" style={{ background: job.design.colors.ink, opacity: 0.85 }} />
-                          <div className="absolute left-5 top-11 h-2 w-16 rounded-sm" style={{ background: job.design.colors.ink, opacity: 0.35 }} />
-                          <div className="absolute left-5 top-[68px] h-6 w-20 rounded-md" style={{ background: job.design.colors.accent }} />
-                          <div className="absolute right-[-12px] top-3 h-24 w-24 rotate-12 rounded-[40%]" style={{ background: job.design.colors.accent, opacity: 0.5 }} />
-                          <div className="absolute right-8 bottom-[-14px] h-20 w-20 rounded-[45%]" style={{ background: job.design.colors.ink, opacity: 0.25 }} />
-                        </div>
-                        <div className="absolute bottom-2 right-2"><PaletteDots design={job.design} /></div>
-                      </div>
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between gap-2">
-                          <h3 className="truncate font-[family-name:var(--font-fraunces)] text-base font-semibold text-stone-100">{job.name}</h3>
-                          {job.audit?.contrast.pass && <Badge variant="outline" className="shrink-0 border-emerald-500/40 text-[10px] text-emerald-400">C.R.A.P. ✓</Badge>}
-                        </div>
-                        <p className="mt-1 text-xs text-stone-500">
-                          {job.archetypeLabel} · {job.design.layoutName?.split(" — ")[0] ?? job.design.heroVariant} · {job.design.paletteName}
-                        </p>
-                        <p className="mt-0.5 truncate text-[10px] text-stone-600" title={`${job.design.layoutName} — source: ${job.design.layoutSource}`}>
-                          {job.design.readingPattern}-pattern · {job.design.pairingName}
-                        </p>
-                        {job.audit?.contrast.detail && (
-                          <p className="mt-1.5 truncate font-mono text-[10px] text-stone-600" title={job.audit.contrast.detail}>{job.audit.contrast.detail}</p>
-                        )}
-                        <div className="mt-3 flex gap-2">
-                          <Button size="sm" variant="outline" onClick={() => setPreview(job)} className="h-8 flex-1 border-stone-700 bg-stone-900 text-xs hover:bg-stone-800 hover:text-amber-300">
-                            <Eye className="mr-1 h-3.5 w-3.5" /> Preview
-                          </Button>
-                          <Button size="sm" onClick={() => downloadOne(job)} className="h-8 flex-1 bg-amber-400 text-xs font-semibold text-stone-950 hover:bg-amber-300">
-                            <Download className="mr-1 h-3.5 w-3.5" /> .zip
-                          </Button>
-                        </div>
-                        {job.shippedAt && <p className="mt-2 text-[10px] text-stone-600">Shipped {new Date(job.shippedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</p>}
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </section>
-          </>
-        )}
-      </main>
-
-      {/* ── Footer (sticky bottom via mt-auto) ── */}
-      <footer className="relative mt-auto border-t border-stone-800/80 bg-stone-950/80">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-4 text-xs text-stone-500 sm:px-6">
-          <p>© {year} {s?.copyrightHolder ?? "…"} · {s?.copyrightNote ?? "All rights reserved."}</p>
-          <p className="flex items-center gap-1.5">
-            Built by THE BEAST · <Github className="h-3.5 w-3.5" /> key-pool pattern adapted from whatsapp-qr-app
-          </p>
-        </div>
-      </footer>
-
-      {/* ── Preview dialog ── */}
-      <Dialog open={!!preview} onOpenChange={(o) => !o && setPreview(null)}>
-        <DialogContent className="max-w-4xl border-stone-800 bg-stone-950 p-0 sm:max-w-4xl">
-          <DialogHeader className="flex-row items-center justify-between space-y-0 border-b border-stone-800 p-4">
-            <div>
-              <DialogTitle className="font-[family-name:var(--font-fraunces)] text-stone-100">{preview?.name}</DialogTitle>
-              <DialogDescription className="text-xs text-stone-500">
-                {preview?.archetypeLabel} · {preview?.design.paletteName} · {preview?.design.pairingName}
-              </DialogDescription>
-              <p className="mt-1 text-[11px] text-amber-400/90" title={preview?.design.layoutSource}>
-                {preview?.design.layoutName} · {preview?.design.readingPattern}-pattern
-              </p>
-            </div>
-            {preview && (
-              <Button size="sm" onClick={() => downloadOne(preview)} className="bg-amber-400 font-semibold text-stone-950 hover:bg-amber-300">
-                <Download className="mr-1.5 h-4 w-4" /> Download .zip
-              </Button>
-            )}
-          </DialogHeader>
-          <div className="h-[70vh] w-full overflow-hidden rounded-b-lg bg-white">
-            {preview && <iframe title={`Preview of ${preview.name}`} src={`/api/preview/${preview.id}`} className="h-full w-full" sandbox="allow-same-origin" />}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* ── Clear confirm ── */}
-      <AlertDialog open={confirmClear} onOpenChange={setConfirmClear}>
-        <AlertDialogContent className="border-stone-800 bg-stone-950 text-stone-200">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="font-[family-name:var(--font-fraunces)]">Download all &amp; clear the shelf?</AlertDialogTitle>
-            <AlertDialogDescription className="text-stone-400">
-              You&apos;ll get one zip with all {data?.shipped.length ?? 0} shipped sites (each with index.html, design notes and your license). After the download, the shelf is cleared — the Beast starts fresh commissions and keeps building.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="border-stone-700 bg-stone-900 hover:bg-stone-800 hover:text-stone-200">Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={downloadAndClear} disabled={downloadingAll} className="bg-amber-400 font-semibold text-stone-950 hover:bg-amber-300">
-              {downloadingAll ? "Packaging…" : "Download & clear"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <LibraryDialog open={libraryOpen} onOpenChange={setLibraryOpen} library={library} layouts={layouts} />
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} data={data} onSaved={refresh} />
+    <div className={`h-28 w-full ${box} p-1.5 flex flex-col gap-1`}>
+      {d.id === 'D1' && (
+        <>
+          <div className="flex items-center justify-between"><div className={`${bar} h-1.5 w-8`} /><div className={`${acc} h-2 w-3`} /></div>
+          <div className={`${acc} h-5 w-4/5 opacity-80`} />
+          <div className={`${bar} h-1 w-3/5`} />
+          <div className="grid flex-1 grid-cols-1 gap-1"><div className={`${box} flex-1`} /></div>
+          <div className={`${acc} h-2.5 w-full`} />
+        </>
+      )}
+      {d.id === 'D2' && (
+        <>
+          <div className="flex items-center gap-1"><div className={`${bar} h-1.5 w-8`} /><div className={`${bar} h-1 w-4`} /><div className={`${bar} h-1 w-4`} /><div className={`${acc} h-2 w-6 ml-auto`} /></div>
+          <div className={`${acc} mx-auto h-4 w-3/5 opacity-80`} />
+          <div className={`${bar} mx-auto h-1 w-2/5`} />
+          <div className="grid flex-1 grid-cols-2 gap-1"><div className={box} /><div className={box} /></div>
+        </>
+      )}
+      {d.id === 'D3' && (
+        <>
+          <div className="flex items-center gap-1.5"><div className={`${bar} h-1.5 w-8`} /><div className={`${bar} h-1 w-4`} /><div className={`${bar} h-1 w-4`} /><div className={`${bar} h-1 w-4`} /><div className={`${acc} h-2 w-6 ml-auto`} /></div>
+          <div className="flex flex-1 gap-1"><div className="flex flex-[55] flex-col gap-1"><div className={`${acc} h-3 w-full opacity-80`} /><div className={`${bar} h-1 w-3/4`} /></div><div className={`${box} flex-[45]`} /></div>
+          <div className="grid grid-cols-3 gap-1"><div className={box} /><div className={box} /><div className={box} /></div>
+        </>
+      )}
+      {d.id === 'D4' && (
+        <>
+          <div className="flex items-center gap-1.5"><div className={`${bar} h-1.5 w-8`} /><div className={`${bar} h-1 w-4`} /><div className={`${bar} h-1 w-4`} /><div className={`${bar} h-1 w-4`} /><div className={`${acc} h-2 w-6 ml-auto`} /></div>
+          <div className="flex flex-1 gap-1"><div className="flex flex-[55] flex-col gap-1"><div className={`${acc} h-3 w-full opacity-80`} /><div className="grid grid-cols-4 gap-1"><div className={`${bar} h-1`} /><div className={`${bar} h-1`} /><div className={`${bar} h-1`} /><div className={`${bar} h-1`} /></div></div><div className={`${box} flex-[45]`} /></div>
+          <div className="grid grid-cols-4 gap-1"><div className={box} /><div className={box} /><div className={box} /><div className={box} /></div>
+        </>
+      )}
+      {d.id === 'D5' && (
+        <>
+          <div className="flex items-center justify-center gap-2"><div className={`${bar} h-1 w-4`} /><div className={`${bar} h-1 w-4`} /><div className={`${bar} h-1 w-4`} /></div>
+          <div className={`${acc} mx-auto h-6 w-2/3 opacity-80`} />
+          <div className={`${bar} mx-auto h-1 w-1/3`} />
+          <div className="grid flex-1 grid-cols-5 gap-1"><div className={box} /><div className={box} /><div className={box} /><div className={box} /><div className={box} /></div>
+        </>
+      )}
     </div>
   );
 }
 
-// ─── Library dialog — the Beast's education: layouts first, then books ─
-function LibraryDialog({ open, onOpenChange, library, layouts }: { open: boolean; onOpenChange: (o: boolean) => void; library: BookLesson[]; layouts: LayoutBook[] }) {
-  const [tab, setTab] = useState<"layouts" | "books">("layouts");
+/* ---------- device preview with real iframe ---------- */
+function DevicePreview({ siteId, width }: { siteId: string; width: number }) {
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  useLayoutEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const update = () => setScale(Math.min(1, (el.clientWidth - 8) / width));
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [width]);
+  const H = 600;
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl border-stone-800 bg-stone-950 sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle className="font-[family-name:var(--font-fraunces)] text-stone-100">The Beast&apos;s education</DialogTitle>
-          <DialogDescription className="text-stone-500">
-            Twelve fully specified layouts and twelve design books. Every decision cites its source.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="flex gap-2">
-          <Button size="sm" variant={tab === "layouts" ? "default" : "outline"} onClick={() => setTab("layouts")}
-            className={tab === "layouts" ? "bg-amber-400 font-semibold text-stone-950 hover:bg-amber-300" : "border-stone-700 bg-stone-900 hover:bg-stone-800 hover:text-amber-300"}>
-            The Layout Book (12)
-          </Button>
-          <Button size="sm" variant={tab === "books" ? "default" : "outline"} onClick={() => setTab("books")}
-            className={tab === "books" ? "bg-amber-400 font-semibold text-stone-950 hover:bg-amber-300" : "border-stone-700 bg-stone-900 hover:bg-stone-800 hover:text-amber-300"}>
-            The 12 Books
-          </Button>
-        </div>
-        <ScrollArea className="max-h-[60vh] pr-3">
-          {tab === "layouts" ? (
-            <div className="grid gap-3">
-              {layouts.length === 0 && <p className="text-sm text-stone-500">Loading the layout book…</p>}
-              {layouts.map((l, i) => (
-                <div key={l.id} className="rounded-xl border border-stone-800 bg-stone-900/50 p-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-[family-name:var(--font-fraunces)] text-sm font-bold text-amber-400">{String(i + 1).padStart(2, "0")}</span>
-                    <h3 className="text-sm font-semibold text-stone-100">{l.name}</h3>
-                    <Badge variant="outline" className="border-stone-700 text-[10px] text-stone-400">{l.readingPattern}-pattern</Badge>
-                  </div>
-                  <p className="mt-2 text-xs leading-relaxed text-stone-300">{l.arrangement}</p>
-                  <p className="mt-2 font-mono text-[10px] text-stone-500">{l.specLine} · breakpoints {l.spec.breakpoints.join("/")}px</p>
-                  <p className="mt-1.5 text-[11px] text-stone-500"><span className="text-stone-400">Source:</span> {l.source}</p>
-                  <div className="mt-2 grid grid-cols-1 gap-1 text-[10px] text-stone-500 sm:grid-cols-2">
-                    <span><span className="font-semibold text-stone-400">C</span> {l.crap.C}</span>
-                    <span><span className="font-semibold text-stone-400">R</span> {l.crap.R}</span>
-                    <span><span className="font-semibold text-stone-400">A</span> {l.crap.A}</span>
-                    <span><span className="font-semibold text-stone-400">P</span> {l.crap.P}</span>
-                  </div>
-                  <p className="mt-2 text-[10px] uppercase tracking-wide text-stone-600">
-                    Sections: {l.sectionOrder.join(" → ")} · Mobile: {l.mobile}
-                  </p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="grid gap-3">
-            {library.length === 0 && <p className="text-sm text-stone-500">Loading the curriculum…</p>}
-            {library.map((b, i) => (
-              <div key={b.id} className="rounded-xl border border-stone-800 bg-stone-900/50 p-4">
-                <div className="flex items-center gap-2">
-                  <span className="font-[family-name:var(--font-fraunces)] text-sm font-bold text-amber-400">{String(i + 1).padStart(2, "0")}</span>
-                  <h3 className="text-sm font-semibold text-stone-100">{b.title}</h3>
-                  <span className="text-xs text-stone-500">— {b.author}, {b.year}</span>
-                </div>
-                <ul className="mt-2 list-inside list-disc space-y-0.5 text-xs leading-relaxed text-stone-400">
-                  {b.doctrine.slice(0, 3).map((d, j) => <li key={j}>{d}</li>)}
-                </ul>
-                <p className="mt-2 text-[10px] uppercase tracking-wide text-stone-600">Powers: {b.powers}</p>
-              </div>
-            ))}
-            </div>
-          )}
-        </ScrollArea>
-      </DialogContent>
-    </Dialog>
+    <div ref={stageRef} className="w-full overflow-hidden">
+      <div className="mx-auto overflow-hidden rounded-xl border border-zinc-700 bg-white shadow-2xl" style={{ width: width * scale, height: H }}>
+        <iframe
+          src={`/api/beast/site/${siteId}`}
+          title="site preview"
+          style={{ width, height: H / scale, transform: `scale(${scale})`, transformOrigin: '0 0', border: 'none' }}
+        />
+      </div>
+    </div>
   );
 }
 
-// ─── Settings dialog — copyright, pace, API key vault ─────────────────
-function SettingsDialog({ open, onOpenChange, data, onSaved }: { open: boolean; onOpenChange: (o: boolean) => void; data: StudioState | null; onSaved: () => void }) {
+/* ---------- main page ---------- */
+export default function BeastPage() {
+  const [status, setStatus] = useState<Status | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [ownerDraft, setOwnerDraft] = useState('');
+  const [previewSite, setPreviewSite] = useState<Site | null>(null);
+  const [deviceIdx, setDeviceIdx] = useState(2); // default Laptop
   const { toast } = useToast();
-  const [holder, setHolder] = useState("");
-  const [note, setNote] = useState("");
-  const [pace, setPace] = useState("6");
-  const [benches, setBenches] = useState("3");
-  const [respawn, setRespawn] = useState(true);
-  const [newKey, setNewKey] = useState("");
-  const [keyLabel, setKeyLabel] = useState("");
-  const [vault, setVault] = useState<VaultView[]>([]);
-  const [saving, setSaving] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      const res = await fetch('/api/beast', { cache: 'no-store' });
+      const data = (await res.json()) as Status;
+      setStatus(data);
+      setOwnerDraft(data.owner);
+    } catch {
+      toast({ title: 'Studio offline', description: 'Could not reach the beast. Try again.', variant: 'destructive' });
+    }
+  }, [toast]);
 
   useEffect(() => {
-    if (open && data) {
-      setHolder(data.settings.copyrightHolder);
-      setNote(data.settings.copyrightNote);
-      setPace(String(data.settings.pace));
-      setBenches(String(data.settings.workbenches));
-      setRespawn(data.settings.autoRespawn);
-      fetch("/api/settings").then((r) => r.json()).then((d) => setVault(d.vault ?? [])).catch(() => {});
-    }
-  }, [open, data]);
+    refresh();
+  }, [refresh]);
 
-  const save = async () => {
-    setSaving(true);
+  const act = async (body: Record<string, unknown>, okMsg: string) => {
+    setBusy(true);
     try {
-      const res = await fetch("/api/settings", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          copyrightHolder: holder,
-          copyrightNote: note,
-          pace: Number(pace),
-          workbenches: Number(benches),
-          autoRespawn: respawn,
-          newApiKey: newKey || undefined,
-          newKeyLabel: keyLabel || undefined,
-        }),
-      });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error ?? "Save failed");
-      setVault(d.vault ?? []);
-      setNewKey("");
-      setKeyLabel("");
-      toast({ title: "Studio settings saved", description: newKey ? "Key stored server-side — only you can see the masked version." : "The Beast adjusts immediately." });
-      onSaved();
-    } catch (e) {
-      toast({ title: "Could not save", description: e instanceof Error ? e.message : "Try again.", variant: "destructive" });
+      const res = await fetch('/api/beast', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await res.json();
+      setStatus(data);
+      setOwnerDraft(data.owner);
+      toast({ title: okMsg });
+    } catch {
+      toast({ title: 'Action failed', variant: 'destructive' });
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
   };
 
-  const removeKey = async (id: string) => {
-    await fetch("/api/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ removeKeyId: id }) });
-    const d = await fetch("/api/settings").then((r) => r.json());
-    setVault(d.vault ?? []);
-    onSaved();
-  };
+  const active = status?.sites.filter((s) => s.status === 'in-studio') ?? [];
+  const shelf = status?.sites.filter((s) => s.status === 'for-sale') ?? [];
+  const devices = status?.devices ?? [];
+  const dev = devices[deviceIdx];
+
+  const infty = (() => {
+    // honest-ish combinatorics, computed on-log scale to avoid overflow
+    const log10 = (a: number) => Math.log10(a);
+    const total =
+      log10(360) + log10(6) + log10(3) + // hue × harmony × theme
+      log10(11 * 9) + // font pairs
+      log10(6 * 4 * 7 * 7 * 4 * 3 * 4 * 3) + // structural variants
+      log10(6720) + // section orders
+      log10(12 * 320) + // niche × brand grammar
+      15 * log10(5); // copy fragment picks
+    const days = Math.pow(10, total);
+    const years = days / 365;
+    const exp = Math.floor(Math.log10(years));
+    return { exp, mantissa: Math.pow(10, Math.log10(years) - exp) };
+  })();
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto border-stone-800 bg-stone-950 sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="font-[family-name:var(--font-fraunces)] text-stone-100">Studio settings</DialogTitle>
-          <DialogDescription className="text-stone-500">Copyright stamp, the Beast&apos;s pace, and the API key pool.</DialogDescription>
-        </DialogHeader>
-
-        <div className="grid gap-4 py-2">
-          <div className="grid gap-1.5">
-            <Label htmlFor="holder" className="text-stone-300">Copyright holder (stamped on every site)</Label>
-            <Input id="holder" value={holder} onChange={(e) => setHolder(e.target.value)} className="border-stone-700 bg-stone-900 text-stone-200" placeholder="Your name or company" />
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="note" className="text-stone-300">Copyright note</Label>
-            <Input id="note" value={note} onChange={(e) => setNote(e.target.value)} className="border-stone-700 bg-stone-900 text-stone-200" placeholder="All rights reserved." />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1.5">
-              <Label className="text-stone-300">Pace (beast-min / real-min)</Label>
-              <Select value={pace} onValueChange={setPace}>
-                <SelectTrigger className="border-stone-700 bg-stone-900 text-stone-200"><SelectValue /></SelectTrigger>
-                <SelectContent className="border-stone-800 bg-stone-900 text-stone-200">
-                  <SelectItem value="1">1 — contemplative (site ≈ 15h)</SelectItem>
-                  <SelectItem value="6">6 — steady (site ≈ 2.5h)</SelectItem>
-                  <SelectItem value="24">24 — driven (site ≈ 38m)</SelectItem>
-                  <SelectItem value="120">120 — obsessed (site ≈ 8m)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-1.5">
-              <Label className="text-stone-300">Workbenches</Label>
-              <Select value={benches} onValueChange={setBenches}>
-                <SelectTrigger className="border-stone-700 bg-stone-900 text-stone-200"><SelectValue /></SelectTrigger>
-                <SelectContent className="border-stone-800 bg-stone-900 text-stone-200">
-                  {[1, 2, 3, 4, 5, 6].map((n) => <SelectItem key={n} value={String(n)}>{n} site{n > 1 ? "s" : ""} at once</SelectItem>)}
-                </SelectContent>
-              </Select>
+    <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100 selection:bg-lime-300 selection:text-zinc-950">
+      {/* ================= HEADER ================= */}
+      <header className="sticky top-0 z-40 border-b border-zinc-800 bg-zinc-950/90 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 py-3 md:px-6">
+          <div className="flex items-center gap-2.5">
+            <span className="grid h-9 w-9 place-items-center rounded-lg bg-lime-300 font-black text-zinc-950">B</span>
+            <div className="leading-tight">
+              <div className="font-bold tracking-tight">BEAST<span className="text-lime-300">.</span>studio</div>
+              <Mono>autonomous web developer</Mono>
             </div>
           </div>
-          <div className="flex items-center justify-between rounded-xl border border-stone-800 bg-stone-900/50 p-3">
-            <div>
-              <p className="text-sm text-stone-300">Auto-respawn commissions</p>
-              <p className="text-xs text-stone-500">Keep every bench full, forever. Untick to stop taking new work.</p>
+          <Badge variant="outline" className="ml-1 border-lime-300/40 font-mono text-lime-300">DAY {status?.day ?? '—'}</Badge>
+          <Badge variant="outline" className="hidden font-mono text-zinc-400 sm:inline-flex">{active.length}/{status?.concurrency ?? 3} in studio</Badge>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1">
+              <span className="font-mono text-[11px] text-zinc-500">©</span>
+              <Input
+                value={ownerDraft}
+                onChange={(e) => setOwnerDraft(e.target.value)}
+                onBlur={() => ownerDraft.trim() && ownerDraft !== status?.owner && act({ action: 'setOwner', owner: ownerDraft }, 'Copyright owner saved')}
+                onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                placeholder="your name"
+                className="h-7 w-36 border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0"
+                aria-label="Copyright owner"
+              />
             </div>
-            <Switch checked={respawn} onCheckedChange={setRespawn} className="data-[state=checked]:bg-amber-400" />
-          </div>
-
-          <Separator className="bg-stone-800" />
-
-          <div>
-            <div className="mb-1 flex items-center gap-2">
-              <KeyRound className="h-4 w-4 text-amber-400" />
-              <Label className="text-stone-300">AI key pool (optional)</Label>
-            </div>
-            <p className="mb-2 text-xs leading-relaxed text-stone-500">
-              Same doctrine as your whatsapp-qr-app: numbered slots, provider auto-detected from the key&apos;s shape, round-robin across healthy keys, cooldown on failure, graceful fallback. Keys are stored server-side and never returned raw.
-            </p>
-            <div className="flex gap-2">
-              <Input value={keyLabel} onChange={(e) => setKeyLabel(e.target.value)} placeholder="Label (e.g. OpenRouter)" className="w-36 border-stone-700 bg-stone-900 text-stone-200" />
-              <Input value={newKey} onChange={(e) => setNewKey(e.target.value)} placeholder="Paste key (sk-…, gsk_…, AIza…)" type="password" className="flex-1 border-stone-700 bg-stone-900 text-stone-200" />
-              <Button size="icon" variant="outline" onClick={save} disabled={!newKey || saving} className="shrink-0 border-stone-700 bg-stone-900 hover:bg-stone-800 hover:text-amber-300" aria-label="Add key">
-                <Plus className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="mt-3 grid gap-2">
-              {vault.length === 0 && <p className="text-xs text-stone-600">Vault empty — the Beast writes its own copy (and says so in the log when it does).</p>}
-              {vault.map((k) => (
-                <div key={k.id} className="flex items-center gap-2 rounded-lg border border-stone-800 bg-stone-900/50 p-2.5 text-xs">
-                  <span className="rounded bg-stone-800 px-1.5 py-0.5 font-mono text-[10px] text-amber-300">{k.provider}</span>
-                  <span className="text-stone-300">{k.label}</span>
-                  <span className="font-mono text-stone-500">{k.masked}</span>
-                  <Badge variant="outline" className={`ml-auto text-[10px] ${k.lastStatus === "cooldown" ? "border-rose-500/40 text-rose-400" : "border-emerald-500/40 text-emerald-400"}`}>{k.lastStatus}</Badge>
-                  <button onClick={() => removeKey(k.id)} aria-label={`Remove ${k.label}`} className="text-stone-600 transition-colors hover:text-rose-400"><X className="h-3.5 w-3.5" /></button>
-                </div>
-              ))}
-            </div>
+            <Button size="sm" variant="outline" className="border-zinc-700 hover:bg-zinc-800" disabled={busy} onClick={() => act({ action: 'skip' }, 'One more work day done — no rush.')}>
+              <FastForward className="h-4 w-4" /> <span className="hidden md:inline">Force work day</span>
+            </Button>
+            <Button size="sm" className="bg-lime-300 font-bold text-zinc-950 hover:bg-lime-200" disabled={!shelf.length} onClick={() => { window.location.href = '/api/beast/zip-all'; toast({ title: 'Workspace packed — download started' }); }}>
+              <Package className="h-4 w-4" /> <span className="hidden md:inline">Download all</span>
+            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button size="sm" variant="ghost" className="text-zinc-400 hover:bg-red-950 hover:text-red-300" disabled={!status?.sites.length}>
+                  <Trash2 className="h-4 w-4" /> <span className="hidden md:inline">Clear</span>
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent className="border-zinc-800 bg-zinc-900 text-zinc-100">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Clear the workspace?</AlertDialogTitle>
+                  <AlertDialogDescription className="text-zinc-400">
+                    This removes every generated site from the shelf. Download them first — selling happens after you keep them.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel className="border-zinc-700 bg-transparent hover:bg-zinc-800">Keep</AlertDialogCancel>
+                  <AlertDialogAction className="bg-red-600 hover:bg-red-500" onClick={() => act({ action: 'clear' }, 'Workspace cleared — the beast starts fresh tomorrow.')}>Clear</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </div>
+      </header>
 
-        <DialogFooter>
-          <Button onClick={save} disabled={saving} className="bg-amber-400 font-semibold text-stone-950 hover:bg-amber-300">
-            {saving ? "Saving…" : "Save settings"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 md:px-6">
+        <Tabs defaultValue="studio" className="gap-6">
+          <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-900 p-1">
+            <TabsTrigger value="studio" className="gap-1.5 data-[state=active]:bg-lime-300 data-[state=active]:text-zinc-950"><MonitorSmartphone className="h-4 w-4" /> Studio</TabsTrigger>
+            <TabsTrigger value="blueprints" className="gap-1.5 data-[state=active]:bg-lime-300 data-[state=active]:text-zinc-950"><Ruler className="h-4 w-4" /> Blueprints · D1–D5</TabsTrigger>
+            <TabsTrigger value="knowledge" className="gap-1.5 data-[state=active]:bg-lime-300 data-[state=active]:text-zinc-950"><BookOpen className="h-4 w-4" /> Knowledge</TabsTrigger>
+          </TabsList>
+
+          {/* ================= STUDIO ================= */}
+          <TabsContent value="studio" className="space-y-6">
+            {/* progress schedule */}
+            <Card className="border-zinc-800 bg-zinc-900/60">
+              <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
+                <div>
+                  <CardTitle className="text-lg">Daily progress schedule</CardTitle>
+                  <p className="mt-1 text-sm text-zinc-400">One stage per site per day — it takes its time, like a human would. Missed days are replayed automatically.</p>
+                </div>
+              </CardHeader>
+              <CardContent className="grid gap-4 lg:grid-cols-2">
+                <div className="space-y-3">
+                  <Mono>in the studio now</Mono>
+                  {active.length === 0 && <p className="text-sm text-zinc-500">Studio empty — next commission arrives with the next work day.</p>}
+                  {active.map((s) => (
+                    <div key={s.id} className="rounded-lg border border-zinc-800 bg-zinc-950 p-3">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <div className="font-semibold">{s.brand}</div>
+                        <Swatches colors={s.palette.swatches} />
+                      </div>
+                      <StageTrack stages={status!.stages} site={s} />
+                    </div>
+                  ))}
+                </div>
+                <div className="space-y-3">
+                  <Mono>work log</Mono>
+                  <ScrollArea className="h-56 rounded-lg border border-zinc-800 bg-zinc-950 p-3">
+                    <div className="space-y-3">
+                      {status?.log.map((d) => (
+                        <div key={d.day}>
+                          <div className="mb-1 font-mono text-[11px] text-lime-300">DAY {d.day} · {d.date}</div>
+                          <ul className="space-y-0.5">
+                            {d.jobs.map((j, i) => (
+                              <li key={i} className="text-[13px] leading-snug text-zinc-400">· {j}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* shelf */}
+            <div>
+              <div className="mb-3 flex items-end justify-between">
+                <div>
+                  <h2 className="text-xl font-bold tracking-tight">The shelf — for sale</h2>
+                  <p className="text-sm text-zinc-400">Every site carries your © + year, five device layouts, and a licence file in the zip.</p>
+                </div>
+                <Mono>{shelf.length} sites</Mono>
+              </div>
+              {shelf.length === 0 && (
+                <Card className="border-dashed border-zinc-800 bg-transparent">
+                  <CardContent className="py-10 text-center text-sm text-zinc-500">
+                    The shelf is empty right now. Sites land here after the 7-stage pipeline — press “Force work day” to watch a stage complete.
+                  </CardContent>
+                </Card>
+              )}
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {shelf.map((s) => (
+                  <Card key={s.id} className="flex flex-col border-zinc-800 bg-zinc-900/60 transition-colors hover:border-lime-300/40">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <CardTitle className="leading-tight">{s.brand}</CardTitle>
+                          <p className="mt-0.5 text-[13px] text-zinc-400">{s.nicheLabel} · {s.city}</p>
+                        </div>
+                        <Badge className="bg-lime-300 font-mono text-zinc-950">${s.price}</Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="flex flex-1 flex-col gap-3">
+                      <Swatches colors={s.palette.swatches} />
+                      <div className="flex flex-wrap gap-1">
+                        <Badge variant="outline" className="border-zinc-700 font-mono text-[10px] text-zinc-300">{s.palette.name}</Badge>
+                        <Badge variant="outline" className="border-zinc-700 font-mono text-[10px] text-zinc-300">{s.design.heroVariant} hero</Badge>
+                        <Badge variant="outline" className="border-zinc-700 font-mono text-[10px] text-zinc-300">{s.design.fontHead} / {s.design.fontBody}</Badge>
+                      </div>
+                      <Separator className="bg-zinc-800" />
+                      <p className="font-mono text-[11px] leading-relaxed text-zinc-500">{s.copyright}</p>
+                      <div className="mt-auto flex gap-2">
+                        <Button size="sm" className="flex-1 bg-lime-300 font-bold text-zinc-950 hover:bg-lime-200" onClick={() => { setPreviewSite(s); setDeviceIdx(2); }}>
+                          <Eye className="h-4 w-4" /> Preview
+                        </Button>
+                        <Button size="sm" variant="outline" className="border-zinc-700 hover:bg-zinc-800" onClick={() => { window.location.href = `/api/beast/site/${s.id}/zip`; toast({ title: `${s.brand}.zip downloading` }); }}>
+                          <Download className="h-4 w-4" /> ZIP
+                        </Button>
+                        <Button size="sm" variant="ghost" className="px-2 text-zinc-500 hover:bg-red-950 hover:text-red-300" onClick={() => { fetch(`/api/beast/site/${s.id}`, { method: 'DELETE' }).then(refresh); toast({ title: 'Site removed' }); }}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* ================= BLUEPRINTS ================= */}
+          <TabsContent value="blueprints" className="space-y-6">
+            <Card className="border-zinc-800 bg-zinc-900/60">
+              <CardHeader><CardTitle className="text-lg">One site · five devices · five different relative layouts</CardTitle>
+                <p className="text-sm text-zinc-400">Two blueprint layers stack together: the 12-pattern layout book (page geometry, below) × the five device classes (structural law, beneath it). These are not zoom levels — each device class re-arranges nav pattern, hero composition, column counts, footer anatomy and type scale. Built from relative units only: %, fr, clamp(), rem, aspect-ratio.</p>
+              </CardHeader>
+            </Card>
+            {/* LAYOUT BOOK */}
+            <div>
+              <div className="mb-3 flex items-end justify-between">
+                <div>
+                  <h2 className="text-xl font-bold tracking-tight">Layer 1 · The layout book — 12 fully specified page layouts</h2>
+                  <p className="text-sm text-zinc-400">Exact geometry + citable research source for every pattern. The wireframe stage picks one per seed; the device classes then reshape it.</p>
+                </div>
+                <Mono>{LAYOUTS.length} patterns</Mono>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {LAYOUTS.map((l) => (
+                  <Card key={l.id} className="border-zinc-800 bg-zinc-900/60">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">{l.name}</CardTitle>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        <Badge variant="outline" className="border-lime-300/40 font-mono text-lime-300">{l.readingPattern}-reading</Badge>
+                        <Badge variant="outline" className="border-zinc-700 font-mono text-[10px] text-zinc-300">hero: {l.heroMode}</Badge>
+                        <Badge variant="outline" className="border-zinc-700 font-mono text-[10px] text-zinc-300">nav: {l.navMode}</Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-[13px]">
+                      <p className="text-zinc-300">{l.arrangement}</p>
+                      <p className="font-mono text-[11px] text-lime-300/90">{specSummary(l)}</p>
+                      <p className="text-zinc-500"><b className="text-zinc-400">Source:</b> {l.source}</p>
+                      <p className="text-zinc-500"><b className="text-zinc-400">Mobile:</b> {l.mobile}</p>
+                      <div className="flex flex-wrap gap-1">
+                        {l.sectionOrder.map((s, i) => <Badge key={i} variant="outline" className="border-zinc-800 text-[10px] text-zinc-500">{i + 1}·{s}</Badge>)}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+            {/* DEVICE LAW */}
+            <div>
+              <div className="mb-3 flex items-end justify-between">
+                <div>
+                  <h2 className="text-xl font-bold tracking-tight">Layer 2 · The device law — D1–D5 structural classes</h2>
+                  <p className="text-sm text-zinc-400">The same site, five devices, five different relative layouts — nav, hero, grids, footer and type scale all re-arrange per class.</p>
+                </div>
+                <Mono>{devices.length} classes</Mono>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {devices.map((d, i) => (
+                <Card key={d.id} className="border-zinc-800 bg-zinc-900/60">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-base">{d.icon} {d.name}</CardTitle>
+                      <Badge variant="outline" className="border-lime-300/40 font-mono text-lime-300">{d.id}</Badge>
+                    </div>
+                    <Mono>{d.range} · preview {d.previewWidth}px</Mono>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <Wire d={d} />
+                    <dl className="space-y-1.5 text-[13px]">
+                      <div><dt className="inline font-mono text-[10px] uppercase tracking-widest text-lime-300">nav </dt><dd className="inline text-zinc-300">{d.nav}</dd></div>
+                      <div><dt className="inline font-mono text-[10px] uppercase tracking-widest text-lime-300">hero </dt><dd className="inline text-zinc-300">{d.hero}</dd></div>
+                      <div><dt className="inline font-mono text-[10px] uppercase tracking-widest text-lime-300">grid </dt><dd className="inline text-zinc-300">{d.featureCols}-col features · {d.galleryCols}-col gallery</dd></div>
+                      <div><dt className="inline font-mono text-[10px] uppercase tracking-widest text-lime-300">footer </dt><dd className="inline text-zinc-300">{d.footer}</dd></div>
+                      <div><dt className="inline font-mono text-[10px] uppercase tracking-widest text-lime-300">container </dt><dd className="inline text-zinc-300">{d.container} · gutters {d.gutter}</dd></div>
+                      <div><dt className="inline font-mono text-[10px] uppercase tracking-widest text-lime-300">type </dt><dd className="inline text-zinc-300">{d.typeNote}</dd></div>
+                      <div><dt className="inline font-mono text-[10px] uppercase tracking-widest text-lime-300">cta </dt><dd className="inline text-zinc-300">{d.cta}</dd></div>
+                    </dl>
+                    <div className="flex flex-wrap gap-1">{d.extras.map((x) => <Badge key={x} variant="outline" className="border-zinc-700 text-[10px] text-zinc-400">{x}</Badge>)}</div>
+                    <div className="pt-1 text-right"><Mono>{['base ≤ 640px', 'min-width: 641px', 'min-width: 1025px', 'min-width: 1441px', 'min-width: 1921px'][i]}</Mono></div>
+                  </CardContent>
+                </Card>
+              ))}
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* ================= KNOWLEDGE ================= */}
+          <TabsContent value="knowledge" className="grid gap-4 lg:grid-cols-2">
+            <Card className="border-zinc-800 bg-zinc-900/60 lg:col-span-2">
+              <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><InfinityIcon className="h-5 w-5 text-lime-300" /> Infinite possible sites — the combinatorics</CardTitle></CardHeader>
+              <CardContent className="grid gap-3 text-sm text-zinc-300 md:grid-cols-3">
+                <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-3"><div className="text-2xl font-black text-lime-300">~10<sup>{infty.exp}</sup></div><p className="mt-1 text-zinc-400">unique sites — about {infty.mantissa.toFixed(1)}×10<sup>{infty.exp}</sup> years of daily output. No lifetime repeats.</p></div>
+                <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-3"><Mono>palette</Mono><p className="mt-1">6 harmony formulas × 360 hues × 3 themes × continuous lightness curves, WCAG-corrected per role.</p></div>
+                <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-3"><Mono>structure</Mono><p className="mt-1">6 hero × 4 nav × 7 motifs × radius/button/rhythm/eyebrow/case × 6,720 section orders × 99 font pairs × 12 niches × naming grammar × ~30 billion copy picks.</p></div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-zinc-800 bg-zinc-900/60 lg:col-span-2">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg"><BookOpen className="h-5 w-5 text-lime-300" /> The 12-book education — distilled, cover to cover</CardTitle>
+                <p className="text-sm text-zinc-400">The canon the beast was raised on. Doctrine in its own words; every book contributes machine rules that the generator consults at the matching stage and cites in the work log.</p>
+              </CardHeader>
+              <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {LIBRARY.map((b) => (
+                  <div key={b.id} className="rounded-lg border border-zinc-800 bg-zinc-950 p-3">
+                    <div className="font-semibold leading-tight text-zinc-100">{b.title}</div>
+                    <Mono>{b.author} · {b.year}</Mono>
+                    <ul className="mt-2 space-y-1">
+                      {b.doctrine.slice(0, 2).map((d, i) => <li key={i} className="text-[12.5px] leading-snug text-zinc-400">· {d}</li>)}
+                    </ul>
+                    <p className="mt-2 font-mono text-[10px] text-lime-300/80">{b.rules.length} machine rules → {b.powers}</p>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
+            <Card className="border-zinc-800 bg-zinc-900/60">
+              <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><ShieldCheck className="h-5 w-5 text-lime-300" /> The CRAP test — enforced in code</CardTitle></CardHeader>
+              <CardContent className="space-y-2 text-sm text-zinc-300">
+                <p><b className="text-lime-300">C — Contrast.</b> Every palette is generated then corrected until ink/bg ≥ 7:1, soft ink ≥ 4.5:1, accent ≥ 3:1, text-on-accent ≥ 4.5:1 (WCAG).</p>
+                <p><b className="text-lime-300">R — Repetition.</b> One spacing scale, one type scale, tokenised colour roles — repeated across every section and every site.</p>
+                <p><b className="text-lime-300">A — Alignment.</b> Everything sits on one container grid per device class; nothing is nudged by eye.</p>
+                <p><b className="text-lime-300">P — Proximity.</b> Related blocks are grouped; section rhythm is a fixed multiple of the spacing scale.</p>
+                <p className="text-zinc-500">QA stage runs this audit per site before it may be stamped ©.</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-zinc-800 bg-zinc-900/60">
+              <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><PaletteIcon className="h-5 w-5 text-lime-300" /> Colour, interface & themes — the curriculum</CardTitle></CardHeader>
+              <CardContent className="space-y-2 text-sm text-zinc-300">
+                <p><b>Deliberate slowness:</b> one decision per stage, logged. Brief → palette → wireframe → build → polish → QA → stamp. No stage skips ahead.</p>
+                <p><b>Colour:</b> harmony math (analogous / complementary / triadic / split / tetradic / monochrome), hue families named, then contrast-corrected — never sampled by “vibe”.</p>
+                <p><b>Interface:</b> 4/8px spacing scale, ≥44px touch targets, focus-visible rings, fluid type with clamp(), semantic landmarks (header/main/section/footer).</p>
+                <p><b>Themes:</b> light / dark / duotone are token sets, not colour swaps — every token re-derives per theme with its own contrast pass.</p>
+                <p><b>Layouts:</b> the five-class blueprint on the Blueprints tab is the law; the renderer may vary structure within it, never violate it.</p>
+                <p className="text-zinc-500">Syllabus areas distilled from the web-design canon (typography, grid systems, visual hierarchy, UX fundamentals, responsive patterns) — applied as rules, not excerpts.</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-zinc-800 bg-zinc-900/60">
+              <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Keyboard className="h-5 w-5 text-lime-300" /> Lessons absorbed from the scraped repo</CardTitle></CardHeader>
+              <CardContent className="space-y-2 text-sm text-zinc-300">
+                <p className="flex items-center gap-2"><Github className="h-4 w-4" /> <span className="font-mono text-[13px]">abbylukwa/whatsapp-qr-app</span></p>
+                <p><b>Key-pool pattern:</b> numbered slots (API_1…API_8) with provider auto-detection by key shape → became the beast’s studio slots: parallel jobs, no blocking.</p>
+                <p><b>Keys as resource objects:</b> registry with scope/priority/cost → became site records: seed, stage, price, provenance.</p>
+                <p><b>Cool-and-revive:</b> failed tasks cool down instead of blocking the queue → a stuck build never stalls the whole studio.</p>
+                <p className="text-zinc-500">Security note: real key values were never copied — structure and patterns only. Full notes: <span className="font-mono text-[12px] text-lime-300/80">download/beast-research/api-key-notes.md</span></p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-zinc-800 bg-zinc-900/60">
+              <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Layers className="h-5 w-5 text-lime-300" /> Business loop</CardTitle></CardHeader>
+              <CardContent className="space-y-2 text-sm text-zinc-300">
+                <p>1. The beast builds ≤ 3 sites in parallel, one stage each per day — quality over hurry.</p>
+                <p>2. Finished sites land on the shelf with your © + year baked into every page and licence file.</p>
+                <p>3. You preview on all five device classes, download the ZIP, sell it.</p>
+                <p>4. Clear the workspace; the next work day starts fresh commissions. The queue never empties.</p>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </main>
+
+      {/* ================= PREVIEW DIALOG ================= */}
+      <Dialog open={!!previewSite} onOpenChange={(o) => !o && setPreviewSite(null)}>
+        <DialogContent className="max-h-[94vh] overflow-y-auto border-zinc-800 bg-zinc-900 text-zinc-100 sm:max-w-5xl">
+          <DialogHeader>
+            <DialogTitle className="flex flex-wrap items-center gap-2">
+              {previewSite?.brand}
+              <Badge variant="outline" className="border-lime-300/40 font-mono text-lime-300">{dev?.icon} {dev?.name} · {dev?.id}</Badge>
+            </DialogTitle>
+            <DialogDescription className="text-zinc-400">
+              Same site, five devices — watch the layout re-arrange, not just shrink.
+            </DialogDescription>
+          </DialogHeader>
+          {previewSite && (
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-1.5">
+                {devices.map((d, i) => (
+                  <Button
+                    key={d.id}
+                    size="sm"
+                    variant={i === deviceIdx ? 'default' : 'outline'}
+                    className={i === deviceIdx ? 'bg-lime-300 font-bold text-zinc-950 hover:bg-lime-200' : 'border-zinc-700 hover:bg-zinc-800'}
+                    onClick={() => setDeviceIdx(i)}
+                  >
+                    {d.icon} <span className="ml-1">{d.name}</span> <span className="ml-1 font-mono text-[10px] opacity-70">{d.previewWidth}px</span>
+                  </Button>
+                ))}
+              </div>
+              <DevicePreview siteId={previewSite.id} width={dev?.previewWidth ?? 1280} />
+              {dev && (
+                <div className="grid gap-2 rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-[13px] md:grid-cols-3">
+                  <div><Mono>nav →</Mono> <span className="text-zinc-300">{dev.nav}</span></div>
+                  <div><Mono>hero →</Mono> <span className="text-zinc-300">{dev.hero}</span></div>
+                  <div><Mono>grid →</Mono> <span className="text-zinc-300">{dev.featureCols}-col · {dev.footer}</span></div>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ================= FOOTER ================= */}
+      <footer className="mt-auto border-t border-zinc-800 bg-zinc-950">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-4 md:px-6 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          <Mono>beast.studio — builds slowly, ships daily</Mono>
+          <Mono>© {new Date().getFullYear()} {status?.owner ?? 'Beast Studio'} · all generated sites carry this stamp</Mono>
+        </div>
+      </footer>
+    </div>
   );
 }
