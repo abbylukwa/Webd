@@ -14,6 +14,7 @@ import { archetypeById, ARCHETYPES } from "./archetypes";
 import { decisionsFor, phaseLines, crapAudit, buildHtml, buildDesignNotes, buildLicense, slugify, SiteDecisions } from "./generator";
 import { paletteById } from "./palettes";
 import { pairingById } from "./typography";
+import { layoutById } from "./layouts";
 import { parseVault, VaultKey } from "./aipool";
 
 const MAX_CATCHUP_MINUTES = 24 * 60; // real minutes of catch-up per tick
@@ -210,6 +211,10 @@ export interface JobView {
     paletteName: string;
     pairingName: string;
     heroVariant: string;
+    layoutId: string;
+    layoutName: string;
+    layoutSource: string;
+    readingPattern: string;
     colors: { bg: string; surface: string; ink: string; accent: string };
   };
   deliberation: { t: number; phase: string; text: string }[];
@@ -242,6 +247,7 @@ export async function getStudioState() {
     const audit = j.audit && j.audit !== "null" ? JSON.parse(j.audit) : null;
     const pal = paletteById(d.paletteId);
     const pair = pairingById(d.pairingId);
+    const layout = layoutById(d.layoutId);
     return {
       id: j.id,
       name: j.name,
@@ -259,6 +265,10 @@ export async function getStudioState() {
         paletteName: pal.name,
         pairingName: pair.name,
         heroVariant: d.heroVariant,
+        layoutId: layout.id,
+        layoutName: layout.name,
+        layoutSource: layout.source,
+        readingPattern: layout.readingPattern,
         colors: { bg: pal.bg, surface: pal.surface, ink: pal.ink, accent: pal.accent },
       },
       deliberation: delib.slice(-8),

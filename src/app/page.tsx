@@ -32,7 +32,7 @@ interface JobView {
   id: string; name: string; archetypeId: string; archetypeLabel: string;
   status: string; workbench: number | null; phaseIndex: number;
   phaseLabel: string; phaseVerb: string; phaseProgress: number; overallProgress: number;
-  design: { paletteId: string; paletteName: string; pairingName: string; heroVariant: string; colors: { bg: string; surface: string; ink: string; accent: string } };
+  design: { paletteId: string; paletteName: string; pairingName: string; heroVariant: string; layoutId: string; layoutName: string; layoutSource: string; readingPattern: string; colors: { bg: string; surface: string; ink: string; accent: string } };
   deliberation: DelibLine[]; etaRealMinutes: number | null;
   commissionedAt: string; shippedAt: string | null;
   audit: { grade: string; contrast: { pass: boolean; detail: string } } | null;
@@ -47,6 +47,13 @@ interface StudioState {
 }
 interface VaultView { id: string; label: string; provider: string; masked: string; addedAt: string; lastStatus: string }
 interface BookLesson { id: string; title: string; author: string; year: number; doctrine: string[]; rules: string[]; powers: string }
+interface LayoutBook {
+  id: string; name: string; source: string; readingPattern: string; arrangement: string;
+  heroMode: string; sectionOrder: string[]; featuresMode: string; storyMode: string;
+  voicesMode: string; navMode: string; bestFor: string[]; mobile: string; specLine: string;
+  spec: { container: number; columns: number; gutter: number; cardCols: number[]; statsCols: number[]; quoteCols: number[]; breakpoints: number[]; itemGap: number; sectionPad: number[]; heroPadY: number[]; radiusScale: number };
+  crap: { C: string; R: string; A: string; P: string };
+}
 
 function fmtEta(min: number | null): string {
   if (min == null) return "—";
@@ -104,6 +111,7 @@ function BeastMark({ size = 34 }: { size?: number }) {
 export default function Studio() {
   const [data, setData] = useState<StudioState | null>(null);
   const [library, setLibrary] = useState<BookLesson[]>([]);
+  const [layouts, setLayouts] = useState<LayoutBook[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [preview, setPreview] = useState<JobView | null>(null);
@@ -126,8 +134,11 @@ export default function Studio() {
   useEffect(() => {
     refresh();
     fetch("/api/library")
-      .then((r) => (r.ok ? r.json() : { library: [] }))
-      .then((d) => setLibrary(d.library ?? []))
+      .then((r) => (r.ok ? r.json() : { library: [], layouts: [] }))
+      .then((d) => {
+        setLibrary(d.library ?? []);
+        setLayouts(d.layouts ?? []);
+      })
       .catch(() => {});
     const iv = setInterval(() => {
       if (document.visibilityState === "visible") refresh();
@@ -401,7 +412,10 @@ export default function Studio() {
                           {job.audit?.contrast.pass && <Badge variant="outline" className="shrink-0 border-emerald-500/40 text-[10px] text-emerald-400">C.R.A.P. ✓</Badge>}
                         </div>
                         <p className="mt-1 text-xs text-stone-500">
-                          {job.archetypeLabel} · {job.design.paletteName} · {job.design.pairingName}
+                          {job.archetypeLabel} · {job.design.layoutName?.split(" — ")[0] ?? job.design.heroVariant} · {job.design.paletteName}
+                        </p>
+                        <p className="mt-0.5 truncate text-[10px] text-stone-600" title={`${job.design.layoutName} — source: ${job.design.layoutSource}`}>
+                          {job.design.readingPattern}-pattern · {job.design.pairingName}
                         </p>
                         {job.audit?.contrast.detail && (
                           <p className="mt-1.5 truncate font-mono text-[10px] text-stone-600" title={job.audit.contrast.detail}>{job.audit.contrast.detail}</p>
@@ -442,8 +456,11 @@ export default function Studio() {
             <div>
               <DialogTitle className="font-[family-name:var(--font-fraunces)] text-stone-100">{preview?.name}</DialogTitle>
               <DialogDescription className="text-xs text-stone-500">
-                {preview?.archetypeLabel} · {preview?.design.paletteName} · {preview?.design.pairingName} · hero: {preview?.design.heroVariant}
+                {preview?.archetypeLabel} · {preview?.design.paletteName} · {preview?.design.pairingName}
               </DialogDescription>
+              <p className="mt-1 text-[11px] text-amber-400/90" title={preview?.design.layoutSource}>
+                {preview?.design.layoutName} · {preview?.design.readingPattern}-pattern
+              </p>
             </div>
             {preview && (
               <Button size="sm" onClick={() => downloadOne(preview)} className="bg-amber-400 font-semibold text-stone-950 hover:bg-amber-300">
@@ -475,25 +492,62 @@ export default function Studio() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <LibraryDialog open={libraryOpen} onOpenChange={setLibraryOpen} library={library} />
+      <LibraryDialog open={libraryOpen} onOpenChange={setLibraryOpen} library={library} layouts={layouts} />
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} data={data} onSaved={refresh} />
     </div>
   );
 }
 
-// ─── Library dialog — the Beast's education ───────────────────────────
-function LibraryDialog({ open, onOpenChange, library }: { open: boolean; onOpenChange: (o: boolean) => void; library: BookLesson[] }) {
+// ─── Library dialog — the Beast's education: layouts first, then books ─
+function LibraryDialog({ open, onOpenChange, library, layouts }: { open: boolean; onOpenChange: (o: boolean) => void; library: BookLesson[]; layouts: LayoutBook[] }) {
+  const [tab, setTab] = useState<"layouts" | "books">("layouts");
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl border-stone-800 bg-stone-950 sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="font-[family-name:var(--font-fraunces)] text-stone-100">The Beast&apos;s education — 12 books</DialogTitle>
+          <DialogTitle className="font-[family-name:var(--font-fraunces)] text-stone-100">The Beast&apos;s education</DialogTitle>
           <DialogDescription className="text-stone-500">
-            Every design decision cites its source. This is the curriculum the engine was raised on.
+            Twelve fully specified layouts and twelve design books. Every decision cites its source.
           </DialogDescription>
         </DialogHeader>
+        <div className="flex gap-2">
+          <Button size="sm" variant={tab === "layouts" ? "default" : "outline"} onClick={() => setTab("layouts")}
+            className={tab === "layouts" ? "bg-amber-400 font-semibold text-stone-950 hover:bg-amber-300" : "border-stone-700 bg-stone-900 hover:bg-stone-800 hover:text-amber-300"}>
+            The Layout Book (12)
+          </Button>
+          <Button size="sm" variant={tab === "books" ? "default" : "outline"} onClick={() => setTab("books")}
+            className={tab === "books" ? "bg-amber-400 font-semibold text-stone-950 hover:bg-amber-300" : "border-stone-700 bg-stone-900 hover:bg-stone-800 hover:text-amber-300"}>
+            The 12 Books
+          </Button>
+        </div>
         <ScrollArea className="max-h-[60vh] pr-3">
-          <div className="grid gap-3">
+          {tab === "layouts" ? (
+            <div className="grid gap-3">
+              {layouts.length === 0 && <p className="text-sm text-stone-500">Loading the layout book…</p>}
+              {layouts.map((l, i) => (
+                <div key={l.id} className="rounded-xl border border-stone-800 bg-stone-900/50 p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-[family-name:var(--font-fraunces)] text-sm font-bold text-amber-400">{String(i + 1).padStart(2, "0")}</span>
+                    <h3 className="text-sm font-semibold text-stone-100">{l.name}</h3>
+                    <Badge variant="outline" className="border-stone-700 text-[10px] text-stone-400">{l.readingPattern}-pattern</Badge>
+                  </div>
+                  <p className="mt-2 text-xs leading-relaxed text-stone-300">{l.arrangement}</p>
+                  <p className="mt-2 font-mono text-[10px] text-stone-500">{l.specLine} · breakpoints {l.spec.breakpoints.join("/")}px</p>
+                  <p className="mt-1.5 text-[11px] text-stone-500"><span className="text-stone-400">Source:</span> {l.source}</p>
+                  <div className="mt-2 grid grid-cols-1 gap-1 text-[10px] text-stone-500 sm:grid-cols-2">
+                    <span><span className="font-semibold text-stone-400">C</span> {l.crap.C}</span>
+                    <span><span className="font-semibold text-stone-400">R</span> {l.crap.R}</span>
+                    <span><span className="font-semibold text-stone-400">A</span> {l.crap.A}</span>
+                    <span><span className="font-semibold text-stone-400">P</span> {l.crap.P}</span>
+                  </div>
+                  <p className="mt-2 text-[10px] uppercase tracking-wide text-stone-600">
+                    Sections: {l.sectionOrder.join(" → ")} · Mobile: {l.mobile}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="grid gap-3">
             {library.length === 0 && <p className="text-sm text-stone-500">Loading the curriculum…</p>}
             {library.map((b, i) => (
               <div key={b.id} className="rounded-xl border border-stone-800 bg-stone-900/50 p-4">
@@ -508,7 +562,8 @@ function LibraryDialog({ open, onOpenChange, library }: { open: boolean; onOpenC
                 <p className="mt-2 text-[10px] uppercase tracking-wide text-stone-600">Powers: {b.powers}</p>
               </div>
             ))}
-          </div>
+            </div>
+          )}
         </ScrollArea>
       </DialogContent>
     </Dialog>

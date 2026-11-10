@@ -1,0 +1,669 @@
+     1→"use client";
+     2→
+     3→import { useCallback, useEffect, useRef, useState } from "react";
+     4→import { Button } from "@/components/ui/button";
+     5→import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+     6→import { Badge } from "@/components/ui/badge";
+     7→import { Progress } from "@/components/ui/progress";
+     8→import { Input } from "@/components/ui/input";
+     9→import { Label } from "@/components/ui/label";
+    10→import { Switch } from "@/components/ui/switch";
+    11→import { ScrollArea } from "@/components/ui/scroll-area";
+    12→import { Separator } from "@/components/ui/separator";
+    13→import {
+    14→  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+    15→} from "@/components/ui/dialog";
+    16→import {
+    17→  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+    18→  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+    19→} from "@/components/ui/alert-dialog";
+    20→import {
+    21→  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+    22→} from "@/components/ui/select";
+    23→import { useToast } from "@/hooks/use-toast";
+    24→import {
+    25→  Hammer, Library, Settings2, Download, ExternalLink, Trash2, Sparkles,
+    26→  Clock, Eye, FlaskConical, KeyRound, Plus, X, Github, SunMoon,
+    27→} from "lucide-react";
+    28→
+    29→// ─── Types (mirror of the server read model) ──────────────────────────
+    30→interface DelibLine { t: number; phase: string; text: string }
+    31→interface JobView {
+    32→  id: string; name: string; archetypeId: string; archetypeLabel: string;
+    33→  status: string; workbench: number | null; phaseIndex: number;
+    34→  phaseLabel: string; phaseVerb: string; phaseProgress: number; overallProgress: number;
+    35→  design: { paletteId: string; paletteName: string; pairingName: string; heroVariant: string; colors: { bg: string; surface: string; ink: string; accent: string } };
+    36→  deliberation: DelibLine[]; etaRealMinutes: number | null;
+    37→  commissionedAt: string; shippedAt: string | null;
+    38→  audit: { grade: string; contrast: { pass: boolean; detail: string } } | null;
+    39→  hasHtml: boolean; wordCount: number | null;
+    40→}
+    41→interface StudioState {
+    42→  settings: { copyrightHolder: string; copyrightNote: string; pace: number; workbenches: number; autoRespawn: boolean; vaultCount: number };
+    43→  active: JobView[]; shipped: JobView[];
+    44→  stats: { shipped: number; active: number; beastHours: number; daysRunning: number; sitesPerDay: number; totalPhases: number };
+    45→  schedule: { date: string; label: string; forecast: number }[];
+    46→  phases: { key: string; label: string; minutes: number }[];
+    47→}
+    48→interface VaultView { id: string; label: string; provider: string; masked: string; addedAt: string; lastStatus: string }
+    49→interface BookLesson { id: string; title: string; author: string; year: number; doctrine: string[]; rules: string[]; powers: string }
+    50→
+    51→function fmtEta(min: number | null): string {
+    52→  if (min == null) return "—";
+    53→  if (min < 1) return "moments";
+    54→  if (min < 60) return `≈ ${Math.round(min)}m`;
+    55→  const h = Math.floor(min / 60);
+    56→  if (h < 36) return `≈ ${h}h ${Math.round(min % 60)}m`;
+    57→  return `≈ ${Math.round(min / 1440)} days`;
+    58→}
+    59→
+    60→// ─── Phase segment bar — the 11 deliberate steps ──────────────────────
+    61→function PhaseBar({ job, phases }: { job: JobView; phases: { key: string; label: string; minutes: number }[] }) {
+    62→  return (
+    63→    <div className="flex gap-[3px]" role="progressbar" aria-valuenow={Math.round(job.overallProgress * 100)} aria-valuemin={0} aria-valuemax={100}>
+    64→      {phases.map((p, i) => {
+    65→        const done = i < job.phaseIndex;
+    66→        const current = i === job.phaseIndex;
+    67→        return (
+    68→          <div
+    69→            key={p.key}
+    70→            title={`${p.label} · ${p.minutes} beast-min${done ? " · done" : current ? " · in progress" : ""}`}
+    71→            className={`h-2 flex-1 rounded-full transition-all duration-700 ${done ? "bg-amber-400" : current ? "bg-amber-400/60 animate-pulse" : "bg-stone-800"}`}
+    72→          />
+    73→        );
+    74→      })}
+    75→    </div>
+    76→  );
+    77→}
+    78→
+    79→function PaletteDots({ design }: { design: JobView["design"] }) {
+    80→  const { bg, surface, ink, accent } = design.colors;
+    81→  return (
+    82→    <div className="flex items-center gap-1" title={`${design.paletteName} · ${design.pairingName}`}>
+    83→      {[bg, surface, ink, accent].map((c, i) => (
+    84→        <span key={i} className="h-3.5 w-3.5 rounded-full border border-white/15" style={{ background: c }} />
+    85→      ))}
+    86→    </div>
+    87→  );
+    88→}
+    89→
+    90→function BeastMark({ size = 34 }: { size?: number }) {
+    91→  return (
+    92→    <div
+    93→      className="relative flex items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 via-orange-500 to-rose-600 shadow-[0_0_24px_rgba(245,158,11,0.35)]"
+    94→      style={{ width: size, height: size }}
+    95→    >
+    96→      <div className="flex gap-[3px]">
+    97→        <span className="h-2 w-2 rounded-full bg-stone-950" />
+    98→        <span className="h-2 w-2 rounded-full bg-stone-950" />
+    99→      </div>
+   100→    </div>
+   101→  );
+   102→}
+   103→
+   104→export default function Studio() {
+   105→  const [data, setData] = useState<StudioState | null>(null);
+   106→  const [library, setLibrary] = useState<BookLesson[]>([]);
+   107→  const [settingsOpen, setSettingsOpen] = useState(false);
+   108→  const [libraryOpen, setLibraryOpen] = useState(false);
+   109→  const [preview, setPreview] = useState<JobView | null>(null);
+   110→  const [confirmClear, setConfirmClear] = useState(false);
+   111→  const [clearing, setClearing] = useState(false);
+   112→  const [downloadingAll, setDownloadingAll] = useState(false);
+   113→  const { toast } = useToast();
+   114→  const dataRef = useRef<StudioState | null>(null);
+   115→  dataRef.current = data;
+   116→
+   117→  const refresh = useCallback(async () => {
+   118→    try {
+   119→      const res = await fetch("/api/tick", { method: "POST", cache: "no-store" });
+   120→      if (res.ok) setData(await res.json());
+   121→    } catch {
+   122→      /* the Beast keeps working even if a tick is dropped */
+   123→    }
+   124→  }, []);
+   125→
+   126→  useEffect(() => {
+   127→    refresh();
+   128→    fetch("/api/library")
+   129→      .then((r) => (r.ok ? r.json() : { library: [] }))
+   130→      .then((d) => setLibrary(d.library ?? []))
+   131→      .catch(() => {});
+   132→    const iv = setInterval(() => {
+   133→      if (document.visibilityState === "visible") refresh();
+   134→    }, 4000);
+   135→    return () => clearInterval(iv);
+   136→  }, [refresh]);
+   137→
+   138→  const downloadOne = async (job: JobView) => {
+   139→    try {
+   140→      const res = await fetch(`/api/download/${job.id}`);
+   141→      if (!res.ok) throw new Error();
+   142→      const blob = await res.blob();
+   143→      const a = document.createElement("a");
+   144→      a.href = URL.createObjectURL(blob);
+   145→      a.download = `${job.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.zip`;
+   146→      a.click();
+   147→      URL.revokeObjectURL(a.href);
+   148→      toast({ title: "Site downloaded", description: `${job.name} is yours — index.html, design notes and license.` });
+   149→      refresh();
+   150→    } catch {
+   151→      toast({ title: "Download failed", description: "Try again in a moment.", variant: "destructive" });
+   152→    }
+   153→  };
+   154→
+   155→  const downloadAndClear = async () => {
+   156→    setDownloadingAll(true);
+   157→    try {
+   158→      const res = await fetch("/api/download-all");
+   159→      if (!res.ok) {
+   160→        toast({ title: "Nothing on the shelf yet", description: "The Beast hasn't shipped a site — give it a few beats." });
+   161→        setDownloadingAll(false);
+   162→        return;
+   163→      }
+   164→      const blob = await res.blob();
+   165→      const a = document.createElement("a");
+   166→      a.href = URL.createObjectURL(blob);
+   167→      a.download = `beast-shelf-${new Date().toISOString().slice(0, 10)}.zip`;
+   168→      a.click();
+   169→      URL.revokeObjectURL(a.href);
+   170→      setConfirmClear(false);
+   171→      setClearing(true);
+   172→      const cleared = await fetch("/api/clear", {
+   173→        method: "POST",
+   174→        headers: { "content-type": "application/json" },
+   175→        body: JSON.stringify({}),
+   176→      }).then((r) => r.json());
+   177→      toast({
+   178→        title: "Shelf downloaded & cleared",
+   179→        description: `${cleared.cleared ?? 0} site${cleared.cleared === 1 ? "" : "s"} are in your zip. The Beast starts the next commissions immediately.`,
+   180→      });
+   181→      setClearing(false);
+   182→      await refresh();
+   183→    } catch {
+   184→      toast({ title: "Download failed", description: "Try again in a moment.", variant: "destructive" });
+   185→      setClearing(false);
+   186→    } finally {
+   187→      setDownloadingAll(false);
+   188→    }
+   189→  };
+   190→
+   191→  const year = new Date().getFullYear();
+   192→  const s = data?.settings;
+   193→  const feed: (DelibLine & { name: string })[] =
+   194→    data?.active.flatMap((j) => j.deliberation.slice(-4).map((d) => ({ ...d, name: j.name }))).sort((a, b) => a.t - b.t).slice(-14) ?? [];
+   195→
+   196→  return (
+   197→    <div className="min-h-screen flex flex-col bg-stone-950 text-stone-200 selection:bg-amber-400/30">
+   198→      {/* ambient glow */}
+   199→      <div aria-hidden className="pointer-events-none fixed inset-x-0 top-0 h-[420px] bg-[radial-gradient(60%_60%_at_50%_0%,rgba(245,158,11,0.13),transparent_70%)]" />
+   200→
+   201→      {/* ── Header ── */}
+   202→      <header className="relative border-b border-stone-800/80 bg-stone-950/70 backdrop-blur">
+   203→        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-4 px-4 py-4 sm:px-6">
+   204→          <BeastMark />
+   205→          <div className="mr-auto">
+   206→            <h1 className="font-[family-name:var(--font-fraunces)] text-xl font-bold tracking-tight text-stone-100 sm:text-2xl">
+   207→              THE BEAST <span className="text-amber-400">·</span> <span className="text-stone-400 font-normal italic text-base sm:text-lg">autonomous web studio</span>
+   208→            </h1>
+   209→            <p className="text-xs text-stone-500">
+   210→              Raised on 12 design books · {data?.stats.totalPhases ?? 11} deliberate phases per site · never rushed
+   211→            </p>
+   212→          </div>
+   213→          <div className="flex items-center gap-2">
+   214→            <Button variant="outline" size="sm" onClick={() => setLibraryOpen(true)} className="border-stone-700 bg-stone-900 hover:bg-stone-800 hover:text-amber-300">
+   215→              <Library className="mr-1.5 h-4 w-4" /> Library
+   216→            </Button>
+   217→            <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)} className="border-stone-700 bg-stone-900 hover:bg-stone-800 hover:text-amber-300">
+   218→              <Settings2 className="mr-1.5 h-4 w-4" /> Settings
+   219→            </Button>
+   220→          </div>
+   221→        </div>
+   222→      </header>
+   223→
+   224→      <main className="relative mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
+   225→        {!data ? (
+   226→          <div className="grid gap-4 pt-10">
+   227→            {[0, 1, 2].map((i) => (
+   228→              <div key={i} className="h-28 animate-pulse rounded-2xl border border-stone-800 bg-stone-900/50" />
+   229→            ))}
+   230→          </div>
+   231→        ) : (
+   232→          <>
+   233→            {/* ── Stats band ── */}
+   234→            <section aria-label="Studio stats" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+   235→              {[
+   236→                { label: "Sites shipped", value: data.stats.shipped, icon: Sparkles },
+   237→                { label: "On the bench", value: data.stats.active, icon: Hammer },
+   238→                { label: "Beast hours", value: data.stats.beastHours, icon: Clock },
+   239→                { label: "Days in operation", value: data.stats.daysRunning, icon: SunMoon },
+   240→                { label: "Sites / day (forecast)", value: data.stats.sitesPerDay, icon: FlaskConical },
+   241→              ].map(({ label, value, icon: Icon }) => (
+   242→                <Card key={label} className="border-stone-800 bg-stone-900/60">
+   243→                  <CardContent className="flex items-center gap-3 p-4">
+   244→                    <div className="rounded-lg bg-amber-400/10 p-2 text-amber-400"><Icon className="h-4 w-4" /></div>
+   245→                    <div>
+   246→                      <div className="font-[family-name:var(--font-fraunces)] text-2xl font-bold leading-none text-stone-100">{value}</div>
+   247→                      <div className="mt-1 text-[11px] uppercase tracking-wide text-stone-500">{label}</div>
+   248→                    </div>
+   249→                  </CardContent>
+   250→                </Card>
+   251→              ))}
+   252→            </section>
+   253→
+   254→            <div className="mt-6 grid gap-6 lg:grid-cols-3">
+   255→              {/* ── Workbenches ── */}
+   256→              <section aria-label="Workbenches" className="lg:col-span-2">
+   257→                <div className="mb-3 flex items-center justify-between">
+   258→                  <h2 className="font-[family-name:var(--font-fraunces)] text-lg font-semibold text-stone-100">The workbenches</h2>
+   259→                  <Badge variant="outline" className="border-amber-400/40 text-amber-300">{data.stats.workbenches} benches · pace ×{data.settings.pace}</Badge>
+   260→                </div>
+   261→                <div className="grid gap-4">
+   262→                  {data.active.length === 0 && (
+   263→                    <Card className="border-dashed border-stone-800 bg-stone-900/40">
+   264→                      <CardContent className="p-6 text-center text-sm text-stone-500">All benches idle — the Beast respawns commissions on the next tick.</CardContent>
+   265→                    </Card>
+   266→                  )}
+   267→                  {data.active.map((job) => (
+   268→                    <Card key={job.id} className="border-stone-800 bg-stone-900/60 transition-colors hover:border-stone-700">
+   269→                      <CardHeader className="flex flex-row items-start justify-between gap-3 p-4 pb-2">
+   270→                        <div className="min-w-0">
+   271→                          <div className="flex flex-wrap items-center gap-2">
+   272→                            <Badge variant="secondary" className="bg-amber-400/10 text-amber-300 hover:bg-amber-400/10">Bench {job.workbench}</Badge>
+   273→                            <CardTitle className="truncate font-[family-name:var(--font-fraunces)] text-lg text-stone-100">{job.name}</CardTitle>
+   274→                            <Badge variant="outline" className="border-stone-700 text-stone-400">{job.archetypeLabel}</Badge>
+   275→                          </div>
+   276→                          <p className="mt-1.5 text-sm text-amber-200/80">{job.phaseVerb}…</p>
+   277→                        </div>
+   278→                        <PaletteDots design={job.design} />
+   279→                      </CardHeader>
+   280→                      <CardContent className="p-4 pt-0">
+   281→                        <PhaseBar job={job} phases={data.phases} />
+   282→                        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-stone-500">
+   283→                          <span><span className="font-semibold text-stone-300">{job.phaseLabel}</span> — phase {Math.min(job.phaseIndex + 1, data.phases.length)} of {data.phases.length}</span>
+   284→                          <span>{Math.round(job.overallProgress * 100)}% · {fmtEta(job.etaRealMinutes)} to ship</span>
+   285→                        </div>
+   286→                        <Progress value={job.overallProgress * 100} className="mt-2 h-1 bg-stone-800 [&>div]:bg-amber-400/70" />
+   287→                        {job.deliberation.length > 0 && (
+   288→                          <p className="mt-3 line-clamp-2 rounded-lg border border-stone-800 bg-stone-950/60 p-2.5 font-mono text-[11px] leading-relaxed text-stone-400">
+   289→                            <span className="text-amber-400/90">beast:</span> {job.deliberation[job.deliberation.length - 1].text}
+   290→                          </p>
+   291→                        )}
+   292→                      </CardContent>
+   293→                    </Card>
+   294→                  ))}
+   295→                </div>
+   296→
+   297→                {/* ── Deliberation feed ── */}
+   298→                <h2 className="mb-3 mt-8 font-[family-name:var(--font-fraunces)] text-lg font-semibold text-stone-100">Deliberation log — the Beast reasons out loud</h2>
+   299→                <Card className="border-stone-800 bg-[#0b0a08]">
+   300→                  <ScrollArea className="max-h-72">
+   301→                    <CardContent className="p-4 font-mono text-[11.5px] leading-relaxed">
+   302→                      {feed.length === 0 && <p className="text-stone-600">The Beast is warming up…</p>}
+   303→                      {feed.map((l, i) => (
+   304→                        <p key={i} className="py-0.5 text-stone-400">
+   305→                          <span className="text-stone-600">{new Date(l.t).toLocaleTimeString("en-US", { hour12: false })}</span>{" "}
+   306→                          <span className="text-amber-400/80">[{l.phase}]</span>{" "}
+   307→                          <span className="text-stone-300">{l.name}:</span> {l.text}
+   308→                        </p>
+   309→                      ))}
+   310→                    </CardContent>
+   311→                  </ScrollArea>
+   312→                </Card>
+   313→              </section>
+   314→
+   315→              {/* ── Schedule ── */}
+   316→              <section aria-label="Progress schedule">
+   317→                <h2 className="mb-3 font-[family-name:var(--font-fraunces)] text-lg font-semibold text-stone-100">Progress schedule</h2>
+   318→                <Card className="border-stone-800 bg-stone-900/60">
+   319→                  <CardHeader className="p-4 pb-2">
+   320→                    <CardTitle className="text-sm font-medium text-stone-400">Next 7 days — planned output</CardTitle>
+   321→                  </CardHeader>
+   322→                  <CardContent className="grid grid-cols-4 gap-2 p-4 pt-0 sm:grid-cols-7 lg:grid-cols-4">
+   323→                    {data.schedule.map((d, i) => (
+   324→                      <div key={d.date} className={`rounded-xl border p-2 text-center ${i === 0 ? "border-amber-400/50 bg-amber-400/10" : "border-stone-800 bg-stone-950/40"}`}>
+   325→                        <div className={`text-[10px] uppercase tracking-wide ${i === 0 ? "text-amber-300" : "text-stone-500"}`}>{i === 0 ? "Today" : d.label.split(",")[0]}</div>
+   326→                        <div className="mt-1 font-[family-name:var(--font-fraunces)] text-lg font-bold text-stone-100">{d.forecast}</div>
+   327→                        <div className="text-[9px] text-stone-600">{d.label.split(",")[1] ?? d.label}</div>
+   328→                      </div>
+   329→                    ))}
+   330→                  </CardContent>
+   331→                  <CardContent className="p-4 pt-0 text-xs leading-relaxed text-stone-500">
+   332→                    The Beast never idles: the moment a bench frees up, a fresh commission is accepted. Close this tab for a week — progress is counted in real time, and it all catches up on your return.
+   333→                  </CardContent>
+   334→                </Card>
+   335→
+   336→                {/* Bulk actions */}
+   337→                <Card className="mt-4 border-amber-400/20 bg-gradient-to-b from-amber-400/[0.07] to-stone-900/60">
+   338→                  <CardContent className="p-4">
+   339→                    <div className="flex items-center gap-2">
+   340→                      <Download className="h-4 w-4 text-amber-400" />
+   341→                      <h3 className="text-sm font-semibold text-stone-200">The shelf</h3>
+   342→                      <Badge className="ml-auto bg-amber-400 text-stone-950 hover:bg-amber-400">{data.shipped.length}</Badge>
+   343→                    </div>
+   344→                    <p className="mt-2 text-xs leading-relaxed text-stone-500">
+   345→                      Finished sites wait here with your copyright stamped in every footer. Download them all, then clear the shelf — the Beast keeps building either way.
+   346→                    </p>
+   347→                    <div className="mt-3 flex flex-col gap-2">
+   348→                      <Button
+   349→                        className="w-full bg-amber-400 font-semibold text-stone-950 hover:bg-amber-300"
+   350→                        disabled={data.shipped.length === 0 || downloadingAll}
+   351→                        onClick={() => setConfirmClear(true)}
+   352→                      >
+   353→                        <Download className="mr-1.5 h-4 w-4" /> Download all &amp; clear shelf
+   354→                      </Button>
+   355→                    </div>
+   356→                  </CardContent>
+   357→                </Card>
+   358→
+   359→                {/* API vault summary */}
+   360→                <Card className="mt-4 border-stone-800 bg-stone-900/60">
+   361→                  <CardContent className="flex items-center gap-3 p-4">
+   362→                    <KeyRound className="h-4 w-4 text-amber-400" />
+   363→                    <div className="mr-auto text-xs text-stone-500">
+   364→                      AI key pool: <span className="font-semibold text-stone-300">{s?.vaultCount ?? 0}</span> key{(s?.vaultCount ?? 0) === 1 ? "" : "s"} · round-robin · cooldown
+   365→                      <br /><span className="text-stone-600">Optional — the Beast writes its own copy without keys.</span>
+   366→                    </div>
+   367→                    <Button variant="ghost" size="sm" onClick={() => setSettingsOpen(true)} className="text-amber-300 hover:bg-stone-800 hover:text-amber-200">Manage</Button>
+   368→                  </CardContent>
+   369→                </Card>
+   370→              </section>
+   371→            </div>
+   372→
+   373→            {/* ── Shelf ── */}
+   374→            <section aria-label="Shipped sites" className="mt-10">
+   375→              <h2 className="mb-3 font-[family-name:var(--font-fraunces)] text-lg font-semibold text-stone-100">
+   376→                The shelf <span className="text-stone-500">— shipped with © {year} {s?.copyrightHolder ?? ""}</span>
+   377→              </h2>
+   378→              {data.shipped.length === 0 ? (
+   379→                <Card className="border-dashed border-stone-800 bg-stone-900/40">
+   380→                  <CardContent className="p-8 text-center">
+   381→                    <p className="text-sm text-stone-500">Nothing shipped yet. First sites land on the shelf in about 15 beast-hours of work — watch the benches.</p>
+   382→                  </CardContent>
+   383→                </Card>
+   384→              ) : (
+   385→                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+   386→                  {data.shipped.map((job) => (
+   387→                    <Card key={job.id} className="group overflow-hidden border-stone-800 bg-stone-900/60 transition-colors hover:border-amber-400/40">
+   388→                      <div className="relative h-28 overflow-hidden border-b border-stone-800" style={{ background: job.design.colors.bg }}>
+   389→                        <div className="absolute inset-0 opacity-90 transition-transform duration-700 group-hover:scale-[1.04]">
+   390→                          <div className="absolute left-5 top-5 h-3 w-24 rounded-sm" style={{ background: job.design.colors.ink, opacity: 0.85 }} />
+   391→                          <div className="absolute left-5 top-11 h-2 w-16 rounded-sm" style={{ background: job.design.colors.ink, opacity: 0.35 }} />
+   392→                          <div className="absolute left-5 top-[68px] h-6 w-20 rounded-md" style={{ background: job.design.colors.accent }} />
+   393→                          <div className="absolute right-[-12px] top-3 h-24 w-24 rotate-12 rounded-[40%]" style={{ background: job.design.colors.accent, opacity: 0.5 }} />
+   394→                          <div className="absolute right-8 bottom-[-14px] h-20 w-20 rounded-[45%]" style={{ background: job.design.colors.ink, opacity: 0.25 }} />
+   395→                        </div>
+   396→                        <div className="absolute bottom-2 right-2"><PaletteDots design={job.design} /></div>
+   397→                      </div>
+   398→                      <CardContent className="p-4">
+   399→                        <div className="flex items-center justify-between gap-2">
+   400→                          <h3 className="truncate font-[family-name:var(--font-fraunces)] text-base font-semibold text-stone-100">{job.name}</h3>
+   401→                          {job.audit?.contrast.pass && <Badge variant="outline" className="shrink-0 border-emerald-500/40 text-[10px] text-emerald-400">C.R.A.P. ✓</Badge>}
+   402→                        </div>
+   403→                        <p className="mt-1 text-xs text-stone-500">
+   404→                          {job.archetypeLabel} · {job.design.paletteName} · {job.design.pairingName}
+   405→                        </p>
+   406→                        {job.audit?.contrast.detail && (
+   407→                          <p className="mt-1.5 truncate font-mono text-[10px] text-stone-600" title={job.audit.contrast.detail}>{job.audit.contrast.detail}</p>
+   408→                        )}
+   409→                        <div className="mt-3 flex gap-2">
+   410→                          <Button size="sm" variant="outline" onClick={() => setPreview(job)} className="h-8 flex-1 border-stone-700 bg-stone-900 text-xs hover:bg-stone-800 hover:text-amber-300">
+   411→                            <Eye className="mr-1 h-3.5 w-3.5" /> Preview
+   412→                          </Button>
+   413→                          <Button size="sm" onClick={() => downloadOne(job)} className="h-8 flex-1 bg-amber-400 text-xs font-semibold text-stone-950 hover:bg-amber-300">
+   414→                            <Download className="mr-1 h-3.5 w-3.5" /> .zip
+   415→                          </Button>
+   416→                        </div>
+   417→                        {job.shippedAt && <p className="mt-2 text-[10px] text-stone-600">Shipped {new Date(job.shippedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</p>}
+   418→                      </CardContent>
+   419→                    </Card>
+   420→                  ))}
+   421→                </div>
+   422→              )}
+   423→            </section>
+   424→          </>
+   425→        )}
+   426→      </main>
+   427→
+   428→      {/* ── Footer (sticky bottom via mt-auto) ── */}
+   429→      <footer className="relative mt-auto border-t border-stone-800/80 bg-stone-950/80">
+   430→        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-4 text-xs text-stone-500 sm:px-6">
+   431→          <p>© {year} {s?.copyrightHolder ?? "…"} · {s?.copyrightNote ?? "All rights reserved."}</p>
+   432→          <p className="flex items-center gap-1.5">
+   433→            Built by THE BEAST · <Github className="h-3.5 w-3.5" /> key-pool pattern adapted from whatsapp-qr-app
+   434→          </p>
+   435→        </div>
+   436→      </footer>
+   437→
+   438→      {/* ── Preview dialog ── */}
+   439→      <Dialog open={!!preview} onOpenChange={(o) => !o && setPreview(null)}>
+   440→        <DialogContent className="max-w-4xl border-stone-800 bg-stone-950 p-0 sm:max-w-4xl">
+   441→          <DialogHeader className="flex-row items-center justify-between space-y-0 border-b border-stone-800 p-4">
+   442→            <div>
+   443→              <DialogTitle className="font-[family-name:var(--font-fraunces)] text-stone-100">{preview?.name}</DialogTitle>
+   444→              <DialogDescription className="text-xs text-stone-500">
+   445→                {preview?.archetypeLabel} · {preview?.design.paletteName} · {preview?.design.pairingName} · hero: {preview?.design.heroVariant}
+   446→              </DialogDescription>
+   447→            </div>
+   448→            {preview && (
+   449→              <Button size="sm" onClick={() => downloadOne(preview)} className="bg-amber-400 font-semibold text-stone-950 hover:bg-amber-300">
+   450→                <Download className="mr-1.5 h-4 w-4" /> Download .zip
+   451→              </Button>
+   452→            )}
+   453→          </DialogHeader>
+   454→          <div className="h-[70vh] w-full overflow-hidden rounded-b-lg bg-white">
+   455→            {preview && <iframe title={`Preview of ${preview.name}`} src={`/api/preview/${preview.id}`} className="h-full w-full" sandbox="allow-same-origin" />}
+   456→          </div>
+   457→        </DialogContent>
+   458→      </Dialog>
+   459→
+   460→      {/* ── Clear confirm ── */}
+   461→      <AlertDialog open={confirmClear} onOpenChange={setConfirmClear}>
+   462→        <AlertDialogContent className="border-stone-800 bg-stone-950 text-stone-200">
+   463→          <AlertDialogHeader>
+   464→            <AlertDialogTitle className="font-[family-name:var(--font-fraunces)]">Download all &amp; clear the shelf?</AlertDialogTitle>
+   465→            <AlertDialogDescription className="text-stone-400">
+   466→              You&apos;ll get one zip with all {data?.shipped.length ?? 0} shipped sites (each with index.html, design notes and your license). After the download, the shelf is cleared — the Beast starts fresh commissions and keeps building.
+   467→            </AlertDialogDescription>
+   468→          </AlertDialogHeader>
+   469→          <AlertDialogFooter>
+   470→            <AlertDialogCancel className="border-stone-700 bg-stone-900 hover:bg-stone-800 hover:text-stone-200">Cancel</AlertDialogCancel>
+   471→            <AlertDialogAction onClick={downloadAndClear} disabled={downloadingAll} className="bg-amber-400 font-semibold text-stone-950 hover:bg-amber-300">
+   472→              {downloadingAll ? "Packaging…" : "Download & clear"}
+   473→            </AlertDialogAction>
+   474→          </AlertDialogFooter>
+   475→        </AlertDialogContent>
+   476→      </AlertDialog>
+   477→
+   478→      <LibraryDialog open={libraryOpen} onOpenChange={setLibraryOpen} library={library} />
+   479→      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} data={data} onSaved={refresh} />
+   480→    </div>
+   481→  );
+   482→}
+   483→
+   484→// ─── Library dialog — the Beast's education ───────────────────────────
+   485→function LibraryDialog({ open, onOpenChange, library }: { open: boolean; onOpenChange: (o: boolean) => void; library: BookLesson[] }) {
+   486→  return (
+   487→    <Dialog open={open} onOpenChange={onOpenChange}>
+   488→      <DialogContent className="max-w-2xl border-stone-800 bg-stone-950 sm:max-w-2xl">
+   489→        <DialogHeader>
+   490→          <DialogTitle className="font-[family-name:var(--font-fraunces)] text-stone-100">The Beast&apos;s education — 12 books</DialogTitle>
+   491→          <DialogDescription className="text-stone-500">
+   492→            Every design decision cites its source. This is the curriculum the engine was raised on.
+   493→          </DialogDescription>
+   494→        </DialogHeader>
+   495→        <ScrollArea className="max-h-[60vh] pr-3">
+   496→          <div className="grid gap-3">
+   497→            {library.length === 0 && <p className="text-sm text-stone-500">Loading the curriculum…</p>}
+   498→            {library.map((b, i) => (
+   499→              <div key={b.id} className="rounded-xl border border-stone-800 bg-stone-900/50 p-4">
+   500→                <div className="flex items-center gap-2">
+   501→                  <span className="font-[family-name:var(--font-fraunces)] text-sm font-bold text-amber-400">{String(i + 1).padStart(2, "0")}</span>
+   502→                  <h3 className="text-sm font-semibold text-stone-100">{b.title}</h3>
+   503→                  <span className="text-xs text-stone-500">— {b.author}, {b.year}</span>
+   504→                </div>
+   505→                <ul className="mt-2 list-inside list-disc space-y-0.5 text-xs leading-relaxed text-stone-400">
+   506→                  {b.doctrine.slice(0, 3).map((d, j) => <li key={j}>{d}</li>)}
+   507→                </ul>
+   508→                <p className="mt-2 text-[10px] uppercase tracking-wide text-stone-600">Powers: {b.powers}</p>
+   509→              </div>
+   510→            ))}
+   511→          </div>
+   512→        </ScrollArea>
+   513→      </DialogContent>
+   514→    </Dialog>
+   515→  );
+   516→}
+   517→
+   518→// ─── Settings dialog — copyright, pace, API key vault ─────────────────
+   519→function SettingsDialog({ open, onOpenChange, data, onSaved }: { open: boolean; onOpenChange: (o: boolean) => void; data: StudioState | null; onSaved: () => void }) {
+   520→  const { toast } = useToast();
+   521→  const [holder, setHolder] = useState("");
+   522→  const [note, setNote] = useState("");
+   523→  const [pace, setPace] = useState("6");
+   524→  const [benches, setBenches] = useState("3");
+   525→  const [respawn, setRespawn] = useState(true);
+   526→  const [newKey, setNewKey] = useState("");
+   527→  const [keyLabel, setKeyLabel] = useState("");
+   528→  const [vault, setVault] = useState<VaultView[]>([]);
+   529→  const [saving, setSaving] = useState(false);
+   530→
+   531→  useEffect(() => {
+   532→    if (open && data) {
+   533→      setHolder(data.settings.copyrightHolder);
+   534→      setNote(data.settings.copyrightNote);
+   535→      setPace(String(data.settings.pace));
+   536→      setBenches(String(data.settings.workbenches));
+   537→      setRespawn(data.settings.autoRespawn);
+   538→      fetch("/api/settings").then((r) => r.json()).then((d) => setVault(d.vault ?? [])).catch(() => {});
+   539→    }
+   540→  }, [open, data]);
+   541→
+   542→  const save = async () => {
+   543→    setSaving(true);
+   544→    try {
+   545→      const res = await fetch("/api/settings", {
+   546→        method: "POST",
+   547→        headers: { "content-type": "application/json" },
+   548→        body: JSON.stringify({
+   549→          copyrightHolder: holder,
+   550→          copyrightNote: note,
+   551→          pace: Number(pace),
+   552→          workbenches: Number(benches),
+   553→          autoRespawn: respawn,
+   554→          newApiKey: newKey || undefined,
+   555→          newKeyLabel: keyLabel || undefined,
+   556→        }),
+   557→      });
+   558→      const d = await res.json();
+   559→      if (!res.ok) throw new Error(d.error ?? "Save failed");
+   560→      setVault(d.vault ?? []);
+   561→      setNewKey("");
+   562→      setKeyLabel("");
+   563→      toast({ title: "Studio settings saved", description: newKey ? "Key stored server-side — only you can see the masked version." : "The Beast adjusts immediately." });
+   564→      onSaved();
+   565→    } catch (e) {
+   566→      toast({ title: "Could not save", description: e instanceof Error ? e.message : "Try again.", variant: "destructive" });
+   567→    } finally {
+   568→      setSaving(false);
+   569→    }
+   570→  };
+   571→
+   572→  const removeKey = async (id: string) => {
+   573→    await fetch("/api/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ removeKeyId: id }) });
+   574→    const d = await fetch("/api/settings").then((r) => r.json());
+   575→    setVault(d.vault ?? []);
+   576→    onSaved();
+   577→  };
+   578→
+   579→  return (
+   580→    <Dialog open={open} onOpenChange={onOpenChange}>
+   581→      <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto border-stone-800 bg-stone-950 sm:max-w-lg">
+   582→        <DialogHeader>
+   583→          <DialogTitle className="font-[family-name:var(--font-fraunces)] text-stone-100">Studio settings</DialogTitle>
+   584→          <DialogDescription className="text-stone-500">Copyright stamp, the Beast&apos;s pace, and the API key pool.</DialogDescription>
+   585→        </DialogHeader>
+   586→
+   587→        <div className="grid gap-4 py-2">
+   588→          <div className="grid gap-1.5">
+   589→            <Label htmlFor="holder" className="text-stone-300">Copyright holder (stamped on every site)</Label>
+   590→            <Input id="holder" value={holder} onChange={(e) => setHolder(e.target.value)} className="border-stone-700 bg-stone-900 text-stone-200" placeholder="Your name or company" />
+   591→          </div>
+   592→          <div className="grid gap-1.5">
+   593→            <Label htmlFor="note" className="text-stone-300">Copyright note</Label>
+   594→            <Input id="note" value={note} onChange={(e) => setNote(e.target.value)} className="border-stone-700 bg-stone-900 text-stone-200" placeholder="All rights reserved." />
+   595→          </div>
+   596→
+   597→          <div className="grid grid-cols-2 gap-3">
+   598→            <div className="grid gap-1.5">
+   599→              <Label className="text-stone-300">Pace (beast-min / real-min)</Label>
+   600→              <Select value={pace} onValueChange={setPace}>
+   601→                <SelectTrigger className="border-stone-700 bg-stone-900 text-stone-200"><SelectValue /></SelectTrigger>
+   602→                <SelectContent className="border-stone-800 bg-stone-900 text-stone-200">
+   603→                  <SelectItem value="1">1 — contemplative (site ≈ 15h)</SelectItem>
+   604→                  <SelectItem value="6">6 — steady (site ≈ 2.5h)</SelectItem>
+   605→                  <SelectItem value="24">24 — driven (site ≈ 38m)</SelectItem>
+   606→                  <SelectItem value="120">120 — obsessed (site ≈ 8m)</SelectItem>
+   607→                </SelectContent>
+   608→              </Select>
+   609→            </div>
+   610→            <div className="grid gap-1.5">
+   611→              <Label className="text-stone-300">Workbenches</Label>
+   612→              <Select value={benches} onValueChange={setBenches}>
+   613→                <SelectTrigger className="border-stone-700 bg-stone-900 text-stone-200"><SelectValue /></SelectTrigger>
+   614→                <SelectContent className="border-stone-800 bg-stone-900 text-stone-200">
+   615→                  {[1, 2, 3, 4, 5, 6].map((n) => <SelectItem key={n} value={String(n)}>{n} site{n > 1 ? "s" : ""} at once</SelectItem>)}
+   616→                </SelectContent>
+   617→              </Select>
+   618→            </div>
+   619→          </div>
+   620→          <div className="flex items-center justify-between rounded-xl border border-stone-800 bg-stone-900/50 p-3">
+   621→            <div>
+   622→              <p className="text-sm text-stone-300">Auto-respawn commissions</p>
+   623→              <p className="text-xs text-stone-500">Keep every bench full, forever. Untick to stop taking new work.</p>
+   624→            </div>
+   625→            <Switch checked={respawn} onCheckedChange={setRespawn} className="data-[state=checked]:bg-amber-400" />
+   626→          </div>
+   627→
+   628→          <Separator className="bg-stone-800" />
+   629→
+   630→          <div>
+   631→            <div className="mb-1 flex items-center gap-2">
+   632→              <KeyRound className="h-4 w-4 text-amber-400" />
+   633→              <Label className="text-stone-300">AI key pool (optional)</Label>
+   634→            </div>
+   635→            <p className="mb-2 text-xs leading-relaxed text-stone-500">
+   636→              Same doctrine as your whatsapp-qr-app: numbered slots, provider auto-detected from the key&apos;s shape, round-robin across healthy keys, cooldown on failure, graceful fallback. Keys are stored server-side and never returned raw.
+   637→            </p>
+   638→            <div className="flex gap-2">
+   639→              <Input value={keyLabel} onChange={(e) => setKeyLabel(e.target.value)} placeholder="Label (e.g. OpenRouter)" className="w-36 border-stone-700 bg-stone-900 text-stone-200" />
+   640→              <Input value={newKey} onChange={(e) => setNewKey(e.target.value)} placeholder="Paste key (sk-…, gsk_…, AIza…)" type="password" className="flex-1 border-stone-700 bg-stone-900 text-stone-200" />
+   641→              <Button size="icon" variant="outline" onClick={save} disabled={!newKey || saving} className="shrink-0 border-stone-700 bg-stone-900 hover:bg-stone-800 hover:text-amber-300" aria-label="Add key">
+   642→                <Plus className="h-4 w-4" />
+   643→              </Button>
+   644→            </div>
+   645→            <div className="mt-3 grid gap-2">
+   646→              {vault.length === 0 && <p className="text-xs text-stone-600">Vault empty — the Beast writes its own copy (and says so in the log when it does).</p>}
+   647→              {vault.map((k) => (
+   648→                <div key={k.id} className="flex items-center gap-2 rounded-lg border border-stone-800 bg-stone-900/50 p-2.5 text-xs">
+   649→                  <span className="rounded bg-stone-800 px-1.5 py-0.5 font-mono text-[10px] text-amber-300">{k.provider}</span>
+   650→                  <span className="text-stone-300">{k.label}</span>
+   651→                  <span className="font-mono text-stone-500">{k.masked}</span>
+   652→                  <Badge variant="outline" className={`ml-auto text-[10px] ${k.lastStatus === "cooldown" ? "border-rose-500/40 text-rose-400" : "border-emerald-500/40 text-emerald-400"}`}>{k.lastStatus}</Badge>
+   653→                  <button onClick={() => removeKey(k.id)} aria-label={`Remove ${k.label}`} className="text-stone-600 transition-colors hover:text-rose-400"><X className="h-3.5 w-3.5" /></button>
+   654→                </div>
+   655→              ))}
+   656→            </div>
+   657→          </div>
+   658→        </div>
+   659→
+   660→        <DialogFooter>
+   661→          <Button onClick={save} disabled={saving} className="bg-amber-400 font-semibold text-stone-950 hover:bg-amber-300">
+   662→            {saving ? "Saving…" : "Save settings"}
+   663→          </Button>
+   664→        </DialogFooter>
+   665→      </DialogContent>
+   666→    </Dialog>
+   667→  );
+   668→}
+   669→

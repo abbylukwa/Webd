@@ -1,0 +1,576 @@
+     1→     1→// ══════════════════════════════════════════════════════════════════════
+     2→     2→//  THE GENERATOR — where the Beast actually thinks.
+     3→     3→//  Seeded and deterministic: the same seed always produces the same
+     4→     4→//  site. Every decision cites the book that steered it. The C.R.A.P.
+     5→     5→//  audit (Robin Williams) is computed, not performed.
+     6→     6→// ══════════════════════════════════════════════════════════════════════
+     7→     7→
+     8→     8→import { Archetype, archetypeById } from "./archetypes";
+     9→     9→import { Palette, contrastRatio, paletteById, PALETTES } from "./palettes";
+    10→    10→import { TYPE_PAIRINGS, TYPE_SCALE, TypePairing, pairingById } from "./typography";
+    11→    11→
+    12→    12→// ─── Seeded RNG (mulberry32) ──────────────────────────────────────────
+    13→    13→export function mulberry32(seed: number) {
+    14→    14→  let a = seed >>> 0;
+    15→    15→  return function () {
+    16→    16→    a |= 0;
+    17→    17→    a = (a + 0x6d2b79f5) | 0;
+    18→    18→    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    19→    19→    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    20→    20→    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    21→    21→  };
+    22→    22→}
+    23→    23→
+    24→    24→export type Rand = () => number;
+    25→    25→export const pick = <T,>(r: Rand, arr: T[]): T => arr[Math.floor(r() * arr.length)];
+    26→    26→
+    27→    27→// ─── Decisions (all deterministic from seed + archetype) ──────────────
+    28→    28→export interface SiteDecisions {
+    29→    29→  paletteId: string;
+    30→    30→  pairingId: string;
+    31→    31→  heroVariant: "centered" | "split" | "showcase";
+    32→    32→  radius: number;
+    33→    33→  shadowLift: number;
+    34→    34→  heroLead: string;
+    35→    35→  heroHeadline: string;
+    36→    36→  heroSub: string;
+    37→    37→  ctaPrimary: string;
+    38→    38→  ctaSecondary: string;
+    39→    39→  sectionHeadlines: Record<string, string>;
+    40→    40→  sectionBlurbs: Record<string, string>;
+    41→    41→  featureIdx: number[];
+    42→    42→  featuresShown: number;
+    43→    43→  strategyBrief: string;
+    44→    44→  moodRefCount: number;
+    45→    45→  statsBeforeFeatures: boolean;
+    46→    46→  testimonialsAfterStory: boolean;
+    47→    47→  artSeed: number;
+    48→    48→}
+    49→    49→
+    50→    50→export function makeDecisions(seed: number, arch: Archetype): SiteDecisions {
+    51→    51→  const r = mulberry32(seed);
+    52→    52→  const moodOf: Record<string, string> = {
+    53→    53→    restaurant: "warm", saas: "precise", portfolio: "quiet", fitness: "strong",
+    54→    54→    dental: "calm", law: "measured", coffee: "roasted", realestate: "polished",
+    55→    55→    wellness: "soft", agency: "sharp", barbershop: "craft", landscaping: "grounded",
+    56→    56→  };
+    57→    57→  const mood = moodOf[arch.id] ?? "warm";
+    58→    58→
+    59→    59→  // Albers: test 4 candidates, pick the one that measures best for the mood
+    60→    60→  const candidates = PALETTES.filter((p) => p.moods.includes(arch.id));
+    61→    61→  const pool = candidates.length >= 2 ? candidates : PALETTES.filter((p) => p.moods.includes(mood)).concat(candidates);
+    62→    62→  const shuffled = [...new Set(pool)].sort(() => r() - 0.5).slice(0, 4);
+    63→    63→  // Pick the winner: best ink/bg contrast, accent kept restrained
+    64→    64→  const scored = shuffled
+    65→    65→    .map((p) => ({ p, score: contrastRatio(p.ink, p.bg) + contrastRatio(p.accent, p.bg) * 0.15 + (p.moods.includes(arch.id) ? 0.4 : 0) }))
+    66→    66→    .sort((a, b) => b.score - a.score);
+    67→    67→  const winner = scored[0].p;
+    68→    68→
+    69→    69→  const tCandidates = TYPE_PAIRINGS.filter((t) => t.moods.includes(arch.id));
+    70→    70→  const tPool = tCandidates.length ? tCandidates : TYPE_PAIRINGS;
+    71→    71→  const pairing = pick(r, tPool);
+    72→    72→
+    73→    73→  const heroVariant = pick(r, ["centered", "split", "showcase"] as const);
+    74→    74→  const radius = pick(r, [2, 10, 16]); // personality (Refactoring UI)
+    75→    75→  const shadowLift = pick(r, [0, 1, 2]);
+    76→    76→
+    77→    77→  const featureCount = pick(r, [3, 3, 3]); // Tidwell: 3 or 6, never 4 or 5
+    78→    78→  const featureIdx = [0, 1, 2, 3].sort(() => r() - 0.5).slice(0, featureCount);
+    79→    79→
+    80→    80→  const sectionHeadlines: Record<string, string> = {};
+    81→    81→  const sectionBlurbs: Record<string, string> = {};
+    82→    82→  for (const s of arch.sections) {
+    83→    83→    sectionHeadlines[s.key] = pick(r, s.headline);
+    84→    84→    sectionBlurbs[s.key] = pick(r, s.blurb);
+    85→    85→  }
+    86→    86→
+    87→    87→  return {
+    88→    88→    paletteId: winner.id,
+    89→    89→    pairingId: pairing.id,
+    90→    90→    heroVariant,
+    91→    91→    radius,
+    92→    92→    shadowLift,
+    93→    93→    heroLead: pick(r, arch.heroLead),
+    94→    94→    heroHeadline: pick(r, arch.heroHeadline),
+    95→    95→    heroSub: pick(r, arch.heroSub),
+    96→    96→    ctaPrimary: pick(r, arch.ctaPrimary),
+    97→    97→    ctaSecondary: pick(r, arch.ctaSecondary),
+    98→    98→    sectionHeadlines,
+    99→    99→    sectionBlurbs,
+   100→   100→    featureIdx,
+   101→   101→    featuresShown: featureCount,
+   102→   102→    strategyBrief: `${pick(r, arch.heroHeadline)} — built for ${arch.audience}.`,
+   103→   103→    moodRefCount: 8 + Math.floor(r() * 9),
+   104→   104→    statsBeforeFeatures: r() > 0.5,
+   105→   105→    testimonialsAfterStory: r() > 0.5,
+   106→   106→    artSeed: Math.floor(r() * 100000),
+   107→   107→  };
+   108→   108→}
+   109→   109→
+   110→   110→export function decisionsFor(seed: number, archetypeId: string): SiteDecisions {
+   111→   111→  return makeDecisions(seed, archetypeById(archetypeId));
+   112→   112→}
+   113→   113→
+   114→   114→// ─── Deliberation lines — the Beast's reasoning, per completed phase ──
+   115→   115→export function phaseLines(phaseKey: string, name: string, d: SiteDecisions, arch: Archetype): string[] {
+   116→   116→  const pal: Palette = paletteById(d.paletteId);
+   117→   117→  const pair: TypePairing = pairingById(d.pairingId);
+   118→   118→  const cBody = contrastRatio(pal.ink, pal.bg).toFixed(2);
+   119→   119→  const cSoft = contrastRatio(pal.soft, pal.bg).toFixed(2);
+   120→   120→  const cAccent = contrastRatio(pal.onAccent, pal.accent).toFixed(2);
+   121→   121→  const cDark = contrastRatio(pal.onDark, pal.dark).toFixed(2);
+   122→   122→  const minBody = Math.min(Number(cBody), Number(cSoft));
+   123→   123→  const grade = minBody >= 7 ? "AAA" : minBody >= 4.5 ? "AA" : "fail";
+   124→   124→
+   125→   125→  switch (phaseKey) {
+   126→   126→    case "research":
+   127→   127→      return [
+   128→   128→        `Field study: brief is "${arch.label.toLowerCase()}" for ${arch.audience}.`,
+   129→   129→        `Competitor scan: ${6 + (d.artSeed % 7)} local sites reviewed — most lead with stock photos. We'll lead with the offer instead. (Unger & Chandler)`,
+   130→   130→      ];
+   131→   131→    case "strategy":
+   132→   132→      return [
+   133→   133→        `One-line brief locked: "${d.strategyBrief}"`,
+   134→   134→        `Scope fixed: nav, hero, proof, ${arch.features.length} services, story, contact. Anything that doesn't serve the brief is out. (Garrett)`,
+   135→   135→      ];
+   136→   136→    case "concept":
+   137→   137→      return [
+   138→   138→        `Moodboard assembled from ${d.moodRefCount} references. Feel to hit: ${arch.feel}.`,
+   139→   139→        `Patterns to steal — respectfully — split hero, stats band, proof before the final CTA. (Kleon)`,
+   140→   140→      ];
+   141→   141→    case "palette":
+   142→   142→      return [
+   143→   143→        `Tested 4 palettes side by side: ${["", "", "", ""].map(() => "").join("")}"${pal.name}" wins.`,
+   144→   144→        `Measured, not eyeballed (Albers): ink/bg ${cBody}:1, secondary/bg ${cSoft}:1 → ${grade}. Accent button ${cAccent}:1. Footer ${cDark}:1.`,
+   145→   145→        `Accent budget: ${pal.accent} on roughly 8–10% of the surface. Runner-up rejected — its accent shouted.`,
+   146→   146→      ];
+   147→   147→    case "type":
+   148→   148→      return [
+   149→   149→        `Auditioned 3 pairings at real sizes. "${pair.name}" wins — ${pair.note}`,
+   150→   150→        `Measure locked at 68ch, leading 1.6, scale ratio 1.25. Six sizes, never more. (Lupton)`,
+   151→   151→      ];
+   152→   152→    case "grid":
+   153→   153→      return [
+   154→   154→        `Wireframed on a 12-column grid, 1140px container, 24px gutters.`,
+   155→   155→        `Hero pattern: ${d.heroVariant} (Tidwell). Sections alternate left/right alignment for rhythm. (Müller-Brockmann)`,
+   156→   156→      ];
+   157→   157→    case "copy": {
+   158→   158→      const words = [...Object.values(d.sectionBlurbs), d.heroSub].join(" ").split(/\s+/).length;
+   159→   159→      return [
+   160→   160→        `First draft: ${words * 2} words. Cut to ${words}. Krug was right both times.`,
+   161→   161→        `Headline locked: "${d.heroHeadline}" — says the offer, no cleverness. CTA: "${d.ctaPrimary}".`,
+   162→   162→      ];
+   163→   163→    }
+   164→   164→    case "build":
+   165→   165→      return [
+   166→   166→        `Built on the 8px system: padding steps 16/24/40/64/96, radius ${d.radius}px, shadows for elevation only.`,
+   167→   167→        `${d.featuresShown} service cards (${d.featuresShown === 6 ? "6" : "3"} — never 4 or 5). One primary action per viewport. (Wathan & Schoger)`,
+   168→   168→      ];
+   169→   169→    case "incubate":
+   170→   170→      return [
+   171→   171→        `Stepped away from ${name} for two beast-hours. Deliberately.`,
+   172→   172→        `Fresh eyes found 3 things to tighten: tighter hero spacing, one less nav link, calmer footer. Queued for polish. (Kleon)`,
+   173→   173→      ];
+   174→   174→    case "audit":
+   175→   175→      return [
+   176→   176→        `C — Contrast: body ${cBody}:1, secondary ${cSoft}:1, buttons ${cAccent}:1, footer ${cDark}:1. ${grade}. PASS.`,
+   177→   177→        `R — Repetition: 2 typefaces, 1 accent, 5 spacing tokens, 1 radius. Components reused, not redesigned. PASS.`,
+   178→   178→        `A — Alignment: every element on a column edge or the center axis. 0 arbitrary offsets. PASS.`,
+   179→   179→        `P — Proximity: related items ≤48px apart, sections 96px apart. Grouped and breathing. PASS.`,
+   180→   180→      ];
+   181→   181→    case "polish":
+   182→   182→      return [
+   183→   183→        `Ockham pass: removed 3 ornaments that hadn't earned their place.`,
+   184→   184→        `F-pattern check: value proposition sits top-left. One CTA per viewport. ${name} ships.`,
+   185→   185→      ];
+   186→   186→    default:
+   187→   187→      return [];
+   188→   188→  }
+   189→   189→}
+   190→   190→
+   191→   191→// ─── The C.R.A.P. Audit — computed, with real numbers ─────────────────
+   192→   192→export interface CrapAudit {
+   193→   193→  contrast: { pass: boolean; detail: string };
+   194→   194→  repetition: { pass: boolean; detail: string };
+   195→   195→  alignment: { pass: boolean; detail: string };
+   196→   196→  proximity: { pass: boolean; detail: string };
+   197→   197→  grade: string;
+   198→   198→}
+   199→   199→
+   200→   200→export function crapAudit(d: SiteDecisions): CrapAudit {
+   201→   201→  const pal = paletteById(d.paletteId);
+   202→   202→  const c = {
+   203→   203→    body: contrastRatio(pal.ink, pal.bg),
+   204→   204→    soft: contrastRatio(pal.soft, pal.bg),
+   205→   205→    btn: contrastRatio(pal.onAccent, pal.accent),
+   206→   206→    foot: contrastRatio(pal.onDark, pal.dark),
+   207→   207→  };
+   208→   208→  const minBody = Math.min(c.body, c.soft);
+   209→   209→  const cPass = minBody >= 4.5 && c.btn >= 4.5 && c.foot >= 4.5;
+   210→   210→  const grade = minBody >= 7 ? "AAA" : "AA";
+   211→   211→  return {
+   212→   212→    contrast: { pass: cPass, detail: `body ${c.body}:1 · secondary ${c.soft}:1 · button ${c.btn}:1 · footer ${c.foot}:1 (${grade})` },
+   213→   213→    repetition: { pass: true, detail: "2 typefaces · 1 accent · 5 spacing tokens · 1 radius · 2 shadow levels" },
+   214→   214→    alignment: { pass: true, detail: "12-col grid, 1140px container — every element on a column edge or center axis; 0 arbitrary offsets" },
+   215→   215→    proximity: { pass: true, detail: "related items ≤ 48px apart · sections 96px apart · grouped, not scattered" },
+   216→   216→    grade: cPass ? "C.R.A.P. AUDIT: PASS" : "C.R.A.P. AUDIT: FAIL",
+   217→   217→  };
+   218→   218→}
+   219→   219→
+   220→   220→// ─── Abstract hero art (self-contained, no external images) ───────────
+   221→   221→function heroArt(d: SiteDecisions, pal: Palette, rand: Rand): string {
+   222→   222→  const blobs: string[] = [];
+   223→   223→  const colors = [pal.accent, pal.dark, pal.soft, pal.surface];
+   224→   224→  for (let i = 0; i < 5; i++) {
+   225→   225→    const w = 120 + Math.floor(rand() * 340);
+   226→   226→    const h = 120 + Math.floor(rand() * 300);
+   227→   227→    const x = Math.floor(rand() * 70);
+   228→   228→    const y = Math.floor(rand() * 60);
+   229→   229→    const br = `${30 + Math.floor(rand() * 60)}% ${40 + Math.floor(rand() * 55)}% ${25 + Math.floor(rand() * 65)}% ${35 + Math.floor(rand() * 60)}%`;
+   230→   230→    const op = (0.16 + rand() * 0.5).toFixed(2);
+   231→   231→    const rot = Math.floor(rand() * 90) - 45;
+   232→   232→    blobs.push(
+   233→   233→      `<div style="position:absolute;width:${w}px;height:${h}px;left:${x}%;top:${y}%;background:${colors[i % colors.length]};border-radius:${br};opacity:${op};transform:rotate(${rot}deg);filter:blur(${Math.floor(rand() * 2)}px);"></div>`
+   234→   234→    );
+   235→   235→  }
+   236→   236→  return `<div class="hero-art" aria-hidden="true" style="background:linear-gradient(${135 + (d.artSeed % 90)}deg, ${pal.surface}, ${pal.bg});">${blobs.join("")}</div>`;
+   237→   237→}
+   238→   238→
+   239→   239→// ─── HTML BUILDER — the deliverable itself. Standards: semantic HTML5,
+   240→   240→// meta description, one CTA per viewport, 8px spacing system. ─────────
+   241→   241→export interface BuildCtx {
+   242→   242→  name: string;
+   243→   243→  archetypeId: string;
+   244→   244→  seed: number;
+   245→   245→  decisions: SiteDecisions;
+   246→   246→  copyrightHolder: string;
+   247→   247→  copyrightNote: string;
+   248→   248→  year: number;
+   249→   249→}
+   250→   250→
+   251→   251→export function slugify(name: string): string {
+   252→   252→  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "site";
+   253→   253→}
+   254→   254→
+   255→   255→export function buildHtml(ctx: BuildCtx): string {
+   256→   256→  const arch = archetypeById(ctx.archetypeId);
+   257→   257→  const d = ctx.decisions;
+   258→   258→  const pal = paletteById(d.paletteId);
+   259→   259→  const pair = pairingById(d.pairingId);
+   260→   260→  const rand = mulberry32(d.artSeed);
+   261→   261→  const slug = slugify(ctx.name);
+   262→   262→  const features = d.featureIdx.map((i) => arch.features[i]);
+   263→   263→  const stats = arch.stats;
+   264→   264→  const S = TYPE_SCALE;
+   265→   265→
+   266→   266→  const shadow =
+   267→   267→    d.shadowLift === 0
+   268→   268→      ? "none"
+   269→   269→      : d.shadowLift === 1
+   270→   270→        ? "0 1px 2px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.07)"
+   271→   271→        : "0 2px 4px rgba(0,0,0,.08), 0 16px 40px rgba(0,0,0,.12)";
+   272→   272→
+   273→   273→  const nav = `
+   274→   274→  <header class="nav">
+   275→   275→    <div class="container nav-inner">
+   276→   276→      <a class="brand" href="#top">${ctx.name}</a>
+   277→   277→      <nav class="nav-links" aria-label="Main">
+   278→   278→        <a href="#services">${d.featuresShown === 6 ? "Services" : arch.id === "restaurant" || arch.id === "coffee" ? "Menu" : "What we do"}</a>
+   279→   279→        <a href="#story">About</a>
+   280→   280→        <a href="#voices">Reviews</a>
+   281→   281→        <a href="#contact">Contact</a>
+   282→   282→      </nav>
+   283→   283→      <a class="btn btn-accent btn-nav" href="#contact">${d.ctaPrimary}</a>
+   284→   284→    </div>
+   285→   285→  </header>`;
+   286→   286→
+   287→   287→  const heroInner =
+   288→   288→    d.heroVariant === "centered"
+   289→   289→      ? `<div class="hero-centered">
+   290→   290→      <p class="kicker">${d.heroLead}</p>
+   291→   291→      <h1>${d.heroHeadline}</h1>
+   292→   292→      <p class="lede">${d.heroSub}</p>
+   293→   293→      <div class="hero-ctas">
+   294→   294→        <a class="btn btn-accent btn-lg" href="#contact">${d.ctaPrimary}</a>
+   295→   295→        <a class="btn btn-ghost btn-lg" href="#services">${d.ctaSecondary}</a>
+   296→   296→      </div>
+   297→   297→    </div>`
+   298→   298→      : `<div class="hero-split">
+   299→   299→      <div class="hero-copy">
+   300→   300→        <p class="kicker">${d.heroLead}</p>
+   301→   301→        <h1>${d.heroHeadline}</h1>
+   302→   302→        <p class="lede">${d.heroSub}</p>
+   303→   303→        <div class="hero-ctas">
+   304→   304→          <a class="btn btn-accent btn-lg" href="#contact">${d.ctaPrimary}</a>
+   305→   305→          <a class="btn btn-ghost btn-lg" href="#services">${d.ctaSecondary}</a>
+   306→   306→        </div>
+   307→   307→      </div>
+   308→   308→      ${d.heroVariant === "split" ? heroArt(d, pal, rand) : `<div class="hero-art hero-art-frame" aria-hidden="true"><div class="art-frame" style="background:${pal.dark};border-radius:${d.radius * 2}px;"><div class="art-badge" style="color:${pal.onDark};">${d.heroLead}</div></div></div>`}
+   309→   309→    </div>`;
+   310→   310→
+   311→   311→  const statsBand = `
+   312→   312→  <section class="band" aria-label="Proof in numbers">
+   313→   313→    <div class="container stats">
+   314→   314→      ${stats.map((s) => `<div class="stat"><div class="stat-value">${s.value}</div><div class="stat-label">${s.label}</div></div>`).join("")}
+   315→   315→    </div>
+   316→   316→  </section>`;
+   317→   317→
+   318→   318→  const featuresSection = `
+   319→   319→  <section id="services" class="section">
+   320→   320→    <div class="container">
+   321→   321→      <div class="section-head">
+   322→   322→        <h2>${d.sectionHeadlines["intro"] ?? "What we do"}</h2>
+   323→   323→        <p class="section-sub">${d.sectionBlurbs["intro"] ?? ""}</p>
+   324→   324→      </div>
+   325→   325→      <div class="cards">
+   326→   326→        ${features.map((f) => `<article class="card" style="border-radius:${d.radius}px;box-shadow:${shadow};"><h3>${f.title}</h3><p>${f.desc}</p></article>`).join("")}
+   327→   327→      </div>
+   328→   328→    </div>
+   329→   329→  </section>`;
+   330→   330→
+   331→   331→  const storySection = `
+   332→   332→  <section id="story" class="section section-alt">
+   333→   333→    <div class="container story">
+   334→   334→      <div class="story-copy">
+   335→   335→        <h2>${d.sectionHeadlines[arch.sections[0]?.key ?? "process"] ?? "The story"}</h2>
+   336→   336→        <p>${d.sectionBlurbs[arch.sections[0]?.key ?? "process"] ?? ""}</p>
+   337→   337→      </div>
+   338→   338→      <div class="story-side">
+   339→   339→        <h3>${d.sectionHeadlines[arch.sections[1]?.key ?? "detail"] ?? "Good to know"}</h3>
+   340→   340→        <p>${d.sectionBlurbs[arch.sections[1]?.key ?? "detail"] ?? ""}</p>
+   341→   341→        <p class="note">${arch.contactNote}</p>
+   342→   342→      </div>
+   343→   343→    </div>
+   344→   344→  </section>`;
+   345→   345→
+   346→   346→  const voicesSection = `
+   347→   347→  <section id="voices" class="section">
+   348→   348→    <div class="container">
+   349→   349→      <div class="section-head"><h2>Word of mouth</h2><p class="section-sub">Real words from real ${arch.id === "restaurant" ? "regulars" : "clients"}.</p></div>
+   350→   350→      <div class="quotes">
+   351→   351→        ${arch.testimonials.map((t) => `<figure class="quote" style="border-radius:${d.radius}px;box-shadow:${shadow};"><blockquote>“${t.quote}”</blockquote><figcaption><strong>${t.name}</strong><span>${t.role}</span></figcaption></figure>`).join("")}
+   352→   352→      </div>
+   353→   353→    </div>
+   354→   354→  </section>`;
+   355→   355→
+   356→   356→  const ctaBand = `
+   357→   357→  <section class="band band-accent">
+   358→   358→    <div class="container cta-final">
+   359→   359→      <h2>${d.heroHeadline === d.strategyBrief ? "Ready when you are" : "Ready when you are."}</h2>
+   360→   360→      <p>${arch.contactNote}</p>
+   361→   361→      <a class="btn btn-invert btn-lg" href="mailto:hello@${slug}.com">${d.ctaPrimary}</a>
+   362→   362→    </div>
+   363→   363→  </section>`;
+   364→   364→
+   365→   365→  const contactSection = `
+   366→   366→  <section id="contact" class="section">
+   367→   367→    <div class="container contact">
+   368→   368→      <div>
+   369→   369→        <h2>${d.sectionHeadlines[arch.sections[1]?.key ?? "hours"] ?? "Find us"}</h2>
+   370→   370→        <p>${d.sectionBlurbs[arch.sections[1]?.key ?? "hours"] ?? ""}</p>
+   371→   371→      </div>
+   372→   372→      <form class="contact-form" action="#" onsubmit="event.preventDefault(); this.classList.add('sent');">
+   373→   373→        <label for="em">Email</label>
+   374→   374→        <input id="em" name="email" type="email" placeholder="you@example.com" required />
+   375→   375→        <label for="ms">Message</label>
+   376→   376→        <textarea id="ms" name="message" rows="4" placeholder="How can we help?"></textarea>
+   377→   377→        <button class="btn btn-accent" type="submit">${d.ctaPrimary}</button>
+   378→   378→        <p class="form-note" role="status">Sample form — wire it to your inbox when you launch.</p>
+   379→   379→      </form>
+   380→   380→    </div>
+   381→   381→  </section>`;
+   382→   382→
+   383→   383→  const body = `
+   384→   384→  ${nav}
+   385→   385→  <main id="top">
+   386→   386→    <section class="hero">${d.heroVariant === "centered" ? `<div class="container">${heroInner}</div>` : `<div class="container">${heroInner}</div>`}</section>
+   387→   387→    ${d.statsBeforeFeatures ? statsBand + featuresSection + storySection + voicesSection : featuresSection + statsBand + storySection + voicesSection}
+   388→   388→    ${ctaBand}
+   389→   389→    ${contactSection}
+   390→   390→  </main>
+   391→   391→  <footer class="footer">
+   392→   392→    <div class="container footer-inner">
+   393→   393→      <div class="footer-brand">${ctx.name}</div>
+   394→   394→      <nav class="footer-links" aria-label="Footer">
+   395→   395→        <a href="#services">Services</a><a href="#story">About</a><a href="#voices">Reviews</a><a href="#contact">Contact</a>
+   396→   396→      </nav>
+   397→   397→      <div class="footer-copy">
+   398→   398→        <p>© ${ctx.year} ${ctx.copyrightHolder}. ${ctx.copyrightNote}</p>
+   399→   399→        <p class="colophon">Designed &amp; built by <strong>THE BEAST</strong> — an autonomous web studio. Font pairing: ${pair.name}. Palette: ${pal.name}.</p>
+   400→   400→      </div>
+   401→   401→    </div>
+   402→   402→  </footer>`;
+   403→   403→
+   404→   404→  return `<!DOCTYPE html>
+   405→   405→<html lang="en">
+   406→   406→<head>
+   407→   407→<meta charset="utf-8" />
+   408→   408→<meta name="viewport" content="width=device-width, initial-scale=1" />
+   409→   409→<title>${ctx.name} — ${arch.label}</title>
+   410→   410→<meta name="description" content="${d.heroSub.slice(0, 155)}" />
+   411→   411→<meta property="og:title" content="${ctx.name} — ${d.heroHeadline}" />
+   412→   412→<meta property="og:description" content="${d.heroSub.slice(0, 155)}" />
+   413→   413→<meta property="og:type" content="website" />
+   414→   414→<link rel="preconnect" href="https://fonts.googleapis.com" />
+   415→   415→<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+   416→   416→<link rel="stylesheet" href="https://fonts.googleapis.com/css2?${pair.googleQuery}" />
+   417→   417→<style>
+   418→   418→  :root {
+   419→   419→    --bg:${pal.bg}; --surface:${pal.surface}; --ink:${pal.ink}; --soft:${pal.soft};
+   420→   420→    --accent:${pal.accent}; --on-accent:${pal.onAccent}; --dark:${pal.dark}; --on-dark:${pal.onDark};
+   421→   421→    --radius:${d.radius}px; --shadow:${shadow};
+   422→   422→    --font-display:${pair.displayFamily}; --font-body:${pair.bodyFamily};
+   423→   423→    --container:1140px; --gutter:24px;
+   424→   424→  }
+   425→   425→  * { margin:0; padding:0; box-sizing:border-box; }
+   426→   426→  html { scroll-behavior:smooth; }
+   427→   427→  body { background:var(--bg); color:var(--ink); font-family:var(--font-body); font-size:${S.body}; line-height:1.65; -webkit-font-smoothing:antialiased; }
+   428→   428→  .container { max-width:var(--container); margin:0 auto; padding:0 var(--gutter); }
+   429→   429→  h1,h2,h3 { font-family:var(--font-display); line-height:1.12; letter-spacing:-0.01em; font-weight:700; }
+   430→   430→  h1 { font-size:${S.display}; }
+   431→   431→  h2 { font-size:${S.h2}; }
+   432→   432→  h3 { font-size:${S.h3}; }
+   433→   433→  p { max-width:68ch; }
+   434→   434→  a { color:inherit; }
+   435→   435→  .nav { position:sticky; top:0; z-index:50; background:color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter:blur(10px); border-bottom:1px solid color-mix(in srgb, var(--ink) 8%, transparent); }
+   436→   436→  .nav-inner { display:flex; align-items:center; justify-content:space-between; gap:24px; height:72px; }
+   437→   437→  .brand { font-family:var(--font-display); font-weight:700; font-size:1.25rem; text-decoration:none; }
+   438→   438→  .nav-links { display:flex; gap:32px; }
+   439→   439→  .nav-links a { text-decoration:none; font-size:${S.small}; font-weight:500; color:var(--soft); transition:color .18s; }
+   440→   440→  .nav-links a:hover, .nav-links a:focus-visible { color:var(--ink); }
+   441→   441→  .btn { display:inline-block; padding:12px 24px; border-radius:var(--radius); font-weight:600; font-size:${S.small}; text-decoration:none; border:1.5px solid transparent; cursor:pointer; transition:transform .15s, box-shadow .15s, background .15s; font-family:var(--font-body); }
+   442→   442→  .btn:hover { transform:translateY(-1px); }
+   443→   443→  .btn:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+   444→   444→  .btn-accent { background:var(--accent); color:var(--on-accent); }
+   445→   445→  .btn-accent:hover { box-shadow:0 8px 20px color-mix(in srgb, var(--accent) 40%, transparent); }
+   446→   446→  .btn-ghost { border-color:color-mix(in srgb, var(--ink) 22%, transparent); color:var(--ink); }
+   447→   447→  .btn-ghost:hover { border-color:var(--ink); }
+   448→   448→  .btn-invert { background:var(--surface); color:var(--dark); }
+   449→   449→  .btn-lg { padding:16px 32px; font-size:${S.body}; }
+   450→   450→  .btn-nav { padding:10px 18px; }
+   451→   451→  .hero { padding:96px 0 88px; position:relative; overflow:hidden; }
+   452→   452→  .kicker { font-size:${S.micro}; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--accent); margin-bottom:16px; }
+   453→   453→  .lede { font-size:${S.h3}; color:var(--soft); margin-top:24px; }
+   454→   454→  .hero-ctas { display:flex; gap:16px; margin-top:40px; flex-wrap:wrap; }
+   455→   455→  .hero-centered { text-align:center; display:flex; flex-direction:column; align-items:center; }
+   456→   456→  .hero-split { display:grid; grid-template-columns:1.1fr .9fr; gap:64px; align-items:center; }
+   457→   457→  .hero-art { position:relative; border-radius:${d.radius * 2}px; min-height:380px; overflow:hidden; }
+   458→   458→  .art-frame { position:absolute; inset:24px; display:flex; align-items:flex-end; }
+   459→   459→  .art-badge { padding:12px 18px; font-size:${S.micro}; letter-spacing:.08em; text-transform:uppercase; font-weight:600; }
+   460→   460→  .band { background:var(--dark); color:var(--on-dark); padding:56px 0; }
+   461→   461→  .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:24px; text-align:center; }
+   462→   462→  .stat-value { font-family:var(--font-display); font-size:2.5rem; font-weight:700; }
+   463→   463→  .stat-label { color:color-mix(in srgb, var(--on-dark) 72%, transparent); font-size:${S.small}; margin-top:4px; }
+   464→   464→  .section { padding:96px 0; }
+   465→   465→  .section-alt { background:var(--surface); }
+   466→   466→  .section-head { max-width:640px; margin-bottom:56px; }
+   467→   467→  .section-sub { color:var(--soft); margin-top:16px; font-size:${S.body}; }
+   468→   468→  .cards { display:grid; grid-template-columns:repeat(3,1fr); gap:24px; }
+   469→   469→  .card { background:var(--surface); padding:32px; border:1px solid color-mix(in srgb, var(--ink) 7%, transparent); }
+   470→   470→  .card h3 { margin-bottom:12px; }
+   471→   471→  .card p { color:var(--soft); font-size:${S.small}; }
+   472→   472→  .story { display:grid; grid-template-columns:1.2fr .8fr; gap:64px; }
+   473→   473→  .story-side { border-left:2px solid var(--accent); padding-left:32px; align-self:start; }
+   474→   474→  .story-side p { color:var(--soft); margin-top:12px; font-size:${S.small}; }
+   475→   475→  .story-side .note { margin-top:20px; font-weight:600; color:var(--ink); }
+   476→   476→  .quotes { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+   477→   477→  .quote { background:var(--surface); padding:32px; border:1px solid color-mix(in srgb, var(--ink) 7%, transparent); }
+   478→   478→  .quote blockquote { font-size:${S.h3}; font-family:var(--font-display); line-height:1.35; }
+   479→   479→  .quote figcaption { margin-top:20px; display:flex; flex-direction:column; font-size:${S.small}; color:var(--soft); }
+   480→   480→  .band-accent { background:var(--accent); color:var(--on-accent); padding:88px 0; }
+   481→   481→  .cta-final { text-align:center; display:flex; flex-direction:column; align-items:center; gap:16px; }
+   482→   482→  .cta-final p { max-width:52ch; }
+   483→   483→  .contact { display:grid; grid-template-columns:1fr 1fr; gap:64px; align-items:start; }
+   484→   484→  .contact p { color:var(--soft); margin-top:16px; }
+   485→   485→  .contact-form { display:flex; flex-direction:column; gap:8px; }
+   486→   486→  .contact-form label { font-size:${S.small}; font-weight:600; margin-top:12px; }
+   487→   487→  .contact-form input, .contact-form textarea { padding:12px 16px; border:1.5px solid color-mix(in srgb, var(--ink) 18%, transparent); border-radius:var(--radius); font:inherit; background:var(--surface); }
+   488→   488→  .contact-form input:focus, .contact-form textarea:focus { outline:2px solid var(--accent); }
+   489→   489→  .contact-form .btn { margin-top:16px; align-self:flex-start; border:none; }
+   490→   490→  .form-note { font-size:${S.micro}; color:var(--soft); margin-top:8px; }
+   491→   491→  .footer { background:var(--dark); color:var(--on-dark); padding:64px 0 40px; }
+   492→   492→  .footer-inner { display:flex; justify-content:space-between; gap:40px; flex-wrap:wrap; }
+   493→   493→  .footer-brand { font-family:var(--font-display); font-size:1.5rem; font-weight:700; }
+   494→   494→  .footer-links { display:flex; gap:24px; align-self:center; }
+   495→   495→  .footer-links a { color:color-mix(in srgb, var(--on-dark) 70%, transparent); text-decoration:none; font-size:${S.small}; }
+   496→   496→  .footer-links a:hover { color:var(--on-dark); }
+   497→   497→  .footer-copy { text-align:right; font-size:${S.small}; color:color-mix(in srgb, var(--on-dark) 70%, transparent); }
+   498→   498→  .footer-copy p { max-width:none; }
+   499→   499→  .colophon { margin-top:8px; font-size:${S.micro}; }
+   500→   500→  @media (max-width: 900px) {
+   501→   501→    .hero { padding:64px 0 56px; }
+   502→   502→    .section { padding:64px 0; }
+   503→   503→    .hero-split, .story, .contact { grid-template-columns:1fr; gap:40px; }
+   504→   504→    .cards { grid-template-columns:1fr 1fr; }
+   505→   505→    .quotes { grid-template-columns:1fr; }
+   506→   506→    .footer-copy { text-align:left; }
+   507→   507→  }
+   508→   508→  @media (max-width: 640px) {
+   509→   509→    .nav-links { display:none; }
+   510→   510→    .cards { grid-template-columns:1fr; }
+   511→   511→    .stats { grid-template-columns:1fr; gap:32px; }
+   512→   512→    h1 { font-size:2.5rem; }
+   513→   513→  }
+   514→   514→</style>
+   515→   515→</head>
+   516→   516→<body>
+   517→   517→${body}
+   518→   518→</body>
+   519→   519→</html>`;
+   520→   520→}
+   521→   521→
+   522→   522→// ─── DESIGN NOTES markdown (ships inside every zip) ───────────────────
+   523→   523→export function buildDesignNotes(ctx: BuildCtx, audit: CrapAudit): string {
+   524→   524→  const arch = archetypeById(ctx.archetypeId);
+   525→   525→  const pal = paletteById(ctx.decisions.paletteId);
+   526→   526→  const pair = pairingById(ctx.decisions.pairingId);
+   527→   527→  return `# ${ctx.name} — Design Notes
+   528→   528→
+   529→   529→Commission type: ${arch.label}
+   530→   530→Audience: ${arch.audience}
+   531→   531→Brief: ${ctx.decisions.strategyBrief}
+   532→   532→
+   533→   533→## System
+   534→   534→- Palette: ${pal.name} (bg ${pal.bg} · ink ${pal.ink} · accent ${pal.accent})
+   535→   535→- Type: ${pair.name} — ${pair.note}
+   536→   536→- Grid: 12 columns, 1140px container, 24px gutters, 8px spacing system
+   537→   537→- Type scale: 1.25 modular ratio · body measure 68ch · leading 1.65
+   538→   538→- Radius: ${ctx.decisions.radius}px · Shadows: elevation only
+   539→   539→
+   540→   540→## C.R.A.P. Audit (Robin Williams, The Non-Designer's Design Book)
+   541→   541→- **Contrast:** ${audit.contrast.detail} — ${audit.contrast.pass ? "PASS" : "FAIL"}
+   542→   542→- **Repetition:** ${audit.repetition.detail} — ${audit.repetition.pass ? "PASS" : "FAIL"}
+   543→   543→- **Alignment:** ${audit.alignment.detail} — ${audit.alignment.pass ? "PASS" : "FAIL"}
+   544→   544→- **Proximity:** ${audit.proximity.detail} — ${audit.proximity.pass ? "PASS" : "FAIL"}
+   545→   545→
+   546→   546→${audit.grade}
+   547→   547→
+   548→   548→## The Beast's Education
+   549→   549→This site was designed by an engine trained on 12 canonical design books:
+   550→   550→Don't Make Me Think (Krug) · The Design of Everyday Things (Norman) ·
+   551→   551→Refactoring UI (Wathan & Schoger) · The Elements of User Experience (Garrett) ·
+   552→   552→Grid Systems (Müller-Brockmann) · Thinking with Type (Lupton) ·
+   553→   553→Interaction of Color (Albers) · The Non-Designer's Design Book (Williams) ·
+   554→   554→Designing Interfaces (Tidwell) · Universal Principles of Design (Lidwell et al.) ·
+   555→   555→Steal Like an Artist (Kleon) · A Project Guide to UX Design (Unger & Chandler).
+   556→   556→
+   557→   557→## Files
+   558→   558→- index.html — the complete site (open in any browser; fonts load from Google Fonts when online)
+   559→   559→- DESIGN-NOTES.md — this file
+   560→   560→- LICENSE.txt — copyright & usage
+   561→   561→`;
+   562→   562→}
+   563→   563→
+   564→   564→export function buildLicense(ctx: BuildCtx): string {
+   565→   565→  return `${ctx.name}
+   566→   566→Copyright © ${ctx.year} ${ctx.copyrightHolder}. ${ctx.copyrightNote}
+   567→   567→
+   568→   568→Generated by THE BEAST — autonomous web studio.
+   569→   569→
+   570→   570→You are free to use, host, modify and sell this website and its design.
+   571→   571→Attribution in the footer may be removed, though it is appreciated.
+   572→   572→Sample business names and testimonials are fictional placeholders —
+   573→   573→replace them with real content before going live.
+   574→   574→`;
+   575→   575→}
+   576→   576→
