@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── The Beast: persistent studio state ───────────────────────────────
+// Jobs survive restarts; progress is elapsed-time based, so the Beast
+// keeps "working" even while the app is closed (it catches up on tick).
+
+model Setting {
+  id              String  @id @default("singleton")
+  copyrightHolder String  @default("Abby Lukwa")
+  copyrightNote   String  @default("All rights reserved.")
+  pace            Int     @default(6) // beast-minutes per real minute
+  workbenches     Int     @default(3)
+  autoRespawn     Boolean @default(true)
+  // API key vault (repo pattern: BreadBot API_1..API_N slots).
+  // Real keys live server-side ONLY; the client receives masked values.
+  apiKeyVault     String  @default("[]")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Job {
+  id            String   @id @default(cuid())
+  name          String // the fictional business being commissioned
+  archetype     String // restaurant | saas | portfolio | ...
+  seed          Int
+  status        String   @default("active") // active | shipped | cleared
+  workbench     Int? // which bench it occupies (1..workbenches)
+  studioMinutes Float    @default(0) // accumulated beast-time
+  phaseIndex    Int      @default(0)
+  decisions     String   @default("{}") // JSON: palette/type/layout/copy picks
+  deliberation  String   @default("[]") // JSON: [{t, phase, text}]
+  audit         String   @default("null") // JSON: CRAP audit result
+  html          String? // final standalone HTML (built at ship time)
+  commissionedAt DateTime @default(now())
+  shippedAt     DateTime?
+  downloadedAt  DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
