@@ -1,0 +1,432 @@
+    40→    40→    : pattern === 'surname' ? `${rng.pick(SURNAMES)}'s ${niche.label.split(' ')[0].replace(/^\w/, (c) => c.toUpperCase())}`
+    41→    41→    : `${noun} & ${rng.pick(ADJECTIVES)}`;
+    42→    42→
+    43→    43→  const palette = buildPalette(rng);
+    44→    44→  const design: DesignSpec = {
+    45→    45→    heroVariant: rng.pick(['poster', 'split', 'cinematic', 'editorial', 'diagonal', 'marquee'] as HeroVariant[]),
+    46→    46→    navVariant: rng.pick(['drawer', 'inline', 'pill', 'topline'] as NavVariant[]),
+    47→    47→    motif: rng.pick(['grain', 'blobs', 'grid', 'rings', 'waves', 'dots', 'arc'] as Motif[]),
+    48→    48→    radius: rng.pick([0, 2, 4, 8, 12, 16, 20]),
+    49→    49→    btnRadius: rng.pick([0, 4, 8, 999]),
+    50→    50→    spaceRhythm: rng.pick(['compact', 'cozy', 'generous'] as const),
+    51→    51→    sectionOrder: [],
+    52→    52→    eyebrow: rng.pick(['dot', 'line', 'bracket', 'number'] as const),
+    53→    53→    displayCase: rng.pick(['upper', 'title', 'lower'] as const),
+    54→    54→    fontHead: (function(){ const fh = rng.pick(HEAD_FONTS); return fh; })(),
+    55→    55→    fontBody: rng.pick(BODY_FONTS),
+    56→    56→    reveal: rng.chance(0.8),
+    57→    57→    darkNav: palette.theme === 'dark' ? rng.chance(0.5) : rng.chance(0.15),
+    58→    58→  };
+    59→    59→  return { rng, niche, brand, city, design, palette };
+    60→    60→}
+    61→    61→
+    62→    62→/* ---------- css ---------- */
+    63→    63→function motifCss(motif: Motif, p: Palette): string {
+    64→    64→  switch (motif) {
+    65→    65→    case 'grain': return `.ambient{opacity:.5;background-image:radial-gradient(${p.border} .8px,transparent .8px),radial-gradient(${p.border} .8px,transparent .8px);background-size:22px 22px,22px 22px;background-position:0 0,11px 11px;}`;
+    66→    66→    case 'blobs': return `.ambient{opacity:.6;background:radial-gradient(600px 400px at 12% 8%,${p.accent}22,transparent 60%),radial-gradient(700px 500px at 88% 20%,${p.accent2}1e,transparent 65%),radial-gradient(500px 600px at 50% 100%,${p.accent}14,transparent 60%);}`;
+    67→    67→    case 'grid': return `.ambient{opacity:.45;background-image:linear-gradient(${p.border} 1px,transparent 1px),linear-gradient(90deg,${p.border} 1px,transparent 1px);background-size:56px 56px;}`;
+    68→    68→    case 'rings': return `.ambient{opacity:.5;background:repeating-radial-gradient(circle at 85% 10%,transparent 0 46px,${p.border} 46px 47px);}`;
+    69→    69→    case 'waves': return `.ambient{opacity:.5;background:repeating-linear-gradient(115deg,transparent 0 38px,${p.border} 38px 39px);}`;
+    70→    70→    case 'dots': return `.ambient{opacity:.55;background-image:radial-gradient(${p.inkSoft}55 1.2px,transparent 1.2px);background-size:26px 26px;}`;
+    71→    71→    default: return `.ambient{opacity:.5;background:radial-gradient(120% 90% at 50% -20%,transparent 60%,${p.accent}18 100%);}`;
+    72→    72→  }
+    73→    73→}
+    74→    74→
+    75→    75→function buildCss(p: Palette, d: DesignSpec, niche: Niche): string {
+    76→    76→  const sp = d.spaceRhythm === 'compact' ? 64 : d.spaceRhythm === 'cozy' ? 88 : 112;
+    77→    77→  const headCase = d.displayCase === 'upper' ? 'uppercase' : d.displayCase === 'lower' ? 'lowercase' : 'none';
+    78→    78→  const navBg = d.darkNav ? p.ink : p.bg;
+    79→    79→  const navInk = d.darkNav ? p.bg : p.ink;
+    80→    80→  const heroMap: Record<HeroVariant, string> = {
+    81→    81→    poster: '1fr', split: '1fr', cinematic: '1fr', editorial: '1fr', diagonal: '1fr', marquee: '1fr',
+    82→    82→  };
+    83→    83→  return `
+    84→    84→:root{
+    85→    85→  --bg:${p.bg};--bgAlt:${p.bgAlt};--surface:${p.surface};--ink:${p.ink};--inkSoft:${p.inkSoft};
+    86→    86→  --accent:${p.accent};--accent2:${p.accent2};--onAccent:${p.inkOnAccent};--border:${p.border};
+    87→    87→  --navBg:${navBg};--navInk:${navInk};
+    88→    88→  --fh:'${d.fontHead}',serif;--fb:'${d.fontBody}',sans-serif;
+    89→    89→  --radius:${d.radius}px;--btnR:${d.btnRadius === 999 ? '999px' : d.btnRadius + 'px'};
+    90→    90→  --container:100%;--gut:16px;--spSec:${sp * 0.6}px;--fx:1;
+    91→    91→  --heroCols:${heroMap[d.heroVariant]};
+    92→    92→}
+    93→    93→*{margin:0;padding:0;box-sizing:border-box}
+    94→    94→html{scroll-behavior:smooth}
+    95→    95→body{background:var(--bg);color:var(--ink);font-family:var(--fb);line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+    96→    96→img,svg{max-width:100%;display:block}
+    97→    97→a{color:inherit;text-decoration:none}
+    98→    98→:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:2px}
+    99→    99→@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+   100→   100→.ambient{position:fixed;inset:0;z-index:-1;pointer-events:none}
+   101→   101→.wrap{width:var(--container);margin-inline:auto;padding-inline:var(--gut)}
+   102→   102→section{padding-block:var(--spSec)}
+   103→   103→h1,h2,h3{font-family:var(--fh);line-height:1.08;letter-spacing:-.01em}
+   104→   104→h1{font-size:clamp(1.9rem,6vw,calc(2.4rem*var(--fx)));text-transform:${headCase};font-weight:700}
+   105→   105→h2{font-size:clamp(1.5rem,3.6vw,calc(2.2rem*var(--fx)));text-transform:${headCase};font-weight:600}
+   106→   106→h3{font-size:clamp(1.05rem,2vw,calc(1.3rem*var(--fx)));font-weight:600}
+   107→   107→.kicker{display:inline-flex;align-items:center;gap:8px;color:var(--accent);font-weight:700;letter-spacing:.14em;text-transform:uppercase;font-size:.72rem;margin-bottom:14px}
+   108→   108→.kicker .kd{width:8px;height:8px;background:var(--accent);border-radius:50%}
+   109→   109→.kicker.kline::before{content:'';width:28px;height:2px;background:var(--accent)}
+   110→   110→.kicker.kbrack::before{content:'[';color:var(--accent);font-weight:700}.kicker.kbrack::after{content:']';color:var(--accent);font-weight:700}
+   111→   111→.knumber{color:var(--inkSoft);font-variant-numeric:tabular-nums;margin-right:2px}
+   112→   112→.lead{color:var(--inkSoft);font-size:clamp(1rem,1.6vw,1.15rem);max-width:56ch}
+   113→   113→.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:56px;padding:12px 24px;border-radius:var(--btnR);font-weight:700;font-size:.95rem;border:2px solid transparent;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,background .18s ease}
+   114→   114→.btn:active{transform:translateY(1px)}
+   115→   115→.btnFill{background:var(--accent);color:var(--onAccent)}
+   116→   116→.btnFill:hover{box-shadow:0 10px 24px -10px ${p.accent}88;transform:translateY(-1px)}
+   117→   117→.btnGhost{border-color:var(--ink);color:var(--ink);background:transparent}
+   118→   118→.btnGhost:hover{background:${p.ink}0d}
+   119→   119→/* NAV — D1: drawer */
+   120→   120→.nav{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--navBg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid ${d.darkNav ? 'transparent' : 'var(--border)'}}
+   121→   121→.navIn{display:flex;align-items:center;justify-content:space-between;min-height:64px;gap:16px}
+   122→   122→.logo{font-family:var(--fh);font-weight:700;font-size:1.15rem;color:var(--navInk);display:flex;align-items:center;gap:10px}
+   123→   123→.logoDot{width:12px;height:12px;border-radius:50%;background:var(--accent);flex:none}
+   124→   124→.navLinks{display:none;gap:26px;list-style:none}
+   125→   125→.navLinks a{color:var(--navInk);opacity:.8;font-size:.92rem;font-weight:600}
+   126→   126→.navLinks a:hover{opacity:1}
+   127→   127→.navCta{display:none}
+   128→   128→.burger{display:inline-flex;flex-direction:column;gap:5px;background:none;border:0;padding:10px;min-width:44px;min-height:44px;cursor:pointer}
+   129→   129→.burger span{width:22px;height:2px;background:var(--navInk);transition:.25s}
+   130→   130→.drawer{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;flex-direction:column;padding:24px;transform:translateY(-100%);transition:transform .32s cubic-bezier(.2,.8,.2,1)}
+   131→   131→.drawer.open{transform:translateY(0)}
+   132→   132→.drawerTop{display:flex;justify-content:space-between;align-items:center}
+   133→   133→.drawer a.dl{font-family:var(--fh);font-size:1.9rem;padding:14px 0;border-bottom:1px solid var(--border);color:var(--ink)}
+   134→   134→.drawer .btn{margin-top:auto}
+   135→   135→/* sections */
+   136→   136→.secHead{margin-bottom:34px;display:flex;flex-direction:column;gap:10px}
+   137→   137→.gridFeat{display:grid;grid-template-columns:1fr;gap:14px}
+   138→   138→.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px;transition:transform .2s ease,box-shadow .2s ease}
+   139→   139→.card:hover{transform:translateY(-3px);box-shadow:0 18px 40px -22px ${p.ink}55}
+   140→   140→.card .cnum{font-variant-numeric:tabular-nums;color:var(--accent);font-weight:800;font-size:.8rem;letter-spacing:.1em}
+   141→   141→.card p{color:var(--inkSoft);font-size:.95rem;margin-top:8px}
+   142→   142→.gridGal{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+   143→   143→.tile{aspect-ratio:4/3;border-radius:var(--radius);position:relative;overflow:hidden;display:flex;align-items:flex-end;padding:14px;color:#fff;font-weight:700;text-shadow:0 1px 8px rgba(0,0,0,.35)}
+   144→   144→.tile span{position:relative;z-index:1;font-size:.85rem;letter-spacing:.04em}
+   145→   145→.gridStats{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+   146→   146→.stat{border-top:2px solid var(--accent);padding-top:10px}
+   147→   147→.stat b{font-family:var(--fh);font-size:clamp(1.6rem,4vw,2.4rem);display:block;line-height:1}
+   148→   148→.stat span{color:var(--inkSoft);font-size:.85rem}
+   149→   149→.menuList{display:grid;gap:10px}
+   150→   150→.menuRow{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:14px 0;border-bottom:1px dashed var(--border)}
+   151→   151→.menuRow b{font-family:var(--fh);font-weight:600}
+   152→   152→.menuRow i{font-style:normal;color:var(--accent);font-weight:700;white-space:nowrap}
+   153→   153→.menuRow small{display:block;color:var(--inkSoft);font-size:.85rem}
+   154→   154→.quotes{display:grid;gap:14px}
+   155→   155→.quote{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--radius);padding:20px}
+   156→   156→.quote p{font-family:var(--fh);font-size:1.05rem;line-height:1.5}
+   157→   157→.quote footer{margin-top:10px;color:var(--inkSoft);font-size:.85rem}
+   158→   158→.faq details{border-bottom:1px solid var(--border)}
+   159→   159→.faq summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:18px 0;font-weight:600;min-height:44px}
+   160→   160→.faq summary::-webkit-details-marker{display:none}
+   161→   161→.faq summary::after{content:'+';font-size:1.4rem;color:var(--accent);transition:transform .2s}
+   162→   162→.faq details[open] summary::after{transform:rotate(45deg)}
+   163→   163→.faq .fa{color:var(--inkSoft);padding-bottom:18px;max-width:62ch}
+   164→   164→.ctaBand{background:var(--accent);color:var(--onAccent);border-radius:var(--radius);padding:40px 24px;text-align:center}
+   165→   165→.ctaBand h2{margin-bottom:10px}
+   166→   166→.ctaBand .btn{background:var(--onAccent);color:var(--accent)}
+   167→   167→.aboutCols{display:grid;gap:18px}
+   168→   168→.pull{font-family:var(--fh);font-size:clamp(1.2rem,2.4vw,1.6rem);line-height:1.35;border-left:3px solid var(--accent);padding-left:18px}
+   169→   169→.contactCols{display:grid;gap:16px}
+   170→   170→.cbox h3{margin-bottom:8px}
+   171→   171→.cbox p,.cbox li{color:var(--inkSoft);font-size:.95rem}
+   172→   172→.cbox ul{list-style:none;display:grid;gap:6px}
+   173→   173→/* footer */
+   174→   174→footer.site{border-top:1px solid var(--border);padding:40px 0 calc(28px + env(safe-area-inset-bottom));background:var(--bgAlt)}
+   175→   175→.footCols{display:grid;grid-template-columns:1fr;gap:24px}
+   176→   176→.footCols h4{font-size:.78rem;letter-spacing:.14em;text-transform:uppercase;color:var(--inkSoft);margin-bottom:10px}
+   177→   177→.footCols ul{list-style:none;display:grid;gap:8px;font-size:.92rem}
+   178→   178→.footCols a:hover{color:var(--accent)}
+   179→   179→.mega-only{display:none}
+   180→   180→.copy{margin-top:28px;padding-top:18px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;color:var(--inkSoft);font-size:.82rem}
+   181→   181→.copy .stamp{font-variant-numeric:tabular-nums}
+   182→   182→/* D1 extras */
+   183→   183→.mbar{position:fixed;left:0;right:0;bottom:0;z-index:40;display:flex;gap:10px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(10px);border-top:1px solid var(--border)}
+   184→   184→.mbar .btn{flex:1;min-height:48px}
+   185→   185→body{padding-bottom:76px}
+   186→   186→.hero{padding-block:calc(var(--spSec)*.8) var(--spSec)}
+   187→   187→.heroWrap{display:grid;grid-template-columns:var(--heroCols);gap:26px;align-items:center}
+   188→   188→.heroWrap .hcopy{display:flex;flex-direction:column;align-items:flex-start;gap:16px}
+   189→   189→.heroWrap .hcopy p{max-width:52ch}
+   190→   190→.heroWrap .hbtns{display:flex;flex-direction:column;gap:10px;width:100%}
+   191→   191→.heroWrap .hbtns .btn{width:100%}
+   192→   192→.hvisual{aspect-ratio:4/3;border-radius:var(--radius);position:relative;overflow:hidden}
+   193→   193→.hvisual::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,transparent 55%,rgba(0,0,0,.18))}
+   194→   194→.heroBadge{position:absolute;top:12px;left:12px;background:rgba(255,255,255,.92);color:#111;font-size:.7rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:6px 10px;border-radius:999px}
+   195→   195→.reveal{opacity:0;transform:translateY(18px);transition:opacity .7s ease,transform .7s cubic-bezier(.2,.8,.2,1)}
+   196→   196→.reveal.in{opacity:1;transform:none}
+   197→   197→/* ============ D2 · tablet 641–1024 ============ */
+   198→   198→@media (min-width:641px){
+   199→   199→  :root{--gut:24px;--spSec:${sp * 0.8}px;--fx:1.1;--container:92%}
+   200→   200→  .wrap{max-width:920px}
+   201→   201→  .burger{display:none}
+   202→   202→  .navLinks{display:flex}
+   203→   203→  .navLinks li.hideD2{display:none}
+   204→   204→  .navCta{display:inline-flex;min-height:44px}
+   205→   205→  .gridFeat{grid-template-columns:repeat(2,1fr);gap:18px}
+   206→   206→  .gridGal{grid-template-columns:repeat(3,1fr);gap:14px}
+   207→   207→  .gridStats{grid-template-columns:repeat(4,1fr)}
+   208→   208→  .menuList{grid-template-columns:1fr 1fr;column-gap:32px}
+   209→   209→  .quotes{grid-template-columns:1fr 1fr}
+   210→   210→  .footCols{grid-template-columns:repeat(2,1fr)}
+   211→   211→  .heroWrap{justify-items:center;text-align:center}
+   212→   212→  .heroWrap .hcopy{align-items:center}
+   213→   213→  .heroWrap .hbtns{flex-direction:row;width:auto}
+   214→   214→  .heroWrap .hbtns .btn{width:auto}
+   215→   215→  .hvisual{width:72%}
+   216→   216→  body{padding-bottom:0}
+   217→   217→  .mbar{display:none}
+   218→   218→}
+   219→   219→/* ============ D3 · laptop 1025–1440 ============ */
+   220→   220→@media (min-width:1025px){
+   221→   221→  :root{--gut:32px;--spSec:${sp}px;--fx:1.2;--container:1080px}
+   222→   222→  .navLinks li.hideD2{display:list-item}
+   223→   223→  .gridFeat{grid-template-columns:repeat(3,1fr)}
+   224→   224→  .gridGal{grid-template-columns:repeat(4,1fr)}
+   225→   225→  .menuList{grid-template-columns:repeat(3,1fr)}
+   226→   226→  .quotes{grid-template-columns:repeat(2,1fr)}
+   227→   227→  .footCols{grid-template-columns:2fr 1fr 1fr 1fr}
+   228→   228→  body[data-hero="split"] .heroWrap,body[data-hero="marquee"] .heroWrap,body[data-hero="diagonal"] .heroWrap{grid-template-columns:55fr 45fr;justify-items:start;text-align:left}
+   229→   229→  body[data-hero="split"] .heroWrap .hcopy,body[data-hero="marquee"] .heroWrap .hcopy,body[data-hero="diagonal"] .heroWrap .hcopy{align-items:flex-start}
+   230→   230→  body[data-hero="split"] .hvisual,body[data-hero="marquee"] .hvisual,body[data-hero="diagonal"] .hvisual{width:100%;aspect-ratio:1/1}
+   231→   231→  body[data-hero="editorial"] .heroWrap{grid-template-columns:1fr;justify-items:start;text-align:left}
+   232→   232→  .aboutCols{grid-template-columns:1.2fr .8fr}
+   233→   233→  .contactCols{grid-template-columns:repeat(3,1fr)}
+   234→   234→  .ctaBand{padding:56px 48px}
+   235→   235→}
+   236→   236→/* ============ D4 · desktop 1441–1920 ============ */
+   237→   237→@media (min-width:1441px){
+   238→   238→  :root{--gut:40px;--spSec:${sp * 1.15}px;--fx:1.35;--container:1320px}
+   239→   239→  .gridFeat{grid-template-columns:repeat(4,1fr)}
+   240→   240→  .mega-only{display:block}
+   241→   241→  .footCols{grid-template-columns:2fr 1fr 1fr 1.4fr}
+   242→   242→  .stats-unlock{display:grid!important}
+   243→   243→  .stat{border-top-width:3px}
+   244→   244→}
+   245→   245→/* ============ D5 · ultra/TV ≥1921 ============ */
+   246→   246→@media (min-width:1921px){
+   247→   247→  :root{--gut:48px;--spSec:${sp * 1.4}px;--fx:1.5;--container:1560px}
+   248→   248→  .gridFeat{grid-template-columns:repeat(5,1fr)}
+   249→   249→  .navIn{justify-content:center;gap:56px}
+   250→   250→  .navLinks{gap:34px}
+   251→   251→  .navLinks a{letter-spacing:.06em;text-transform:uppercase;font-size:.8rem}
+   252→   252→  body[data-hero] .heroWrap{grid-template-columns:1fr;justify-items:center;text-align:center;padding-block:40px}
+   253→   253→  body[data-hero] .heroWrap .hcopy{align-items:center}
+   254→   254→  body[data-hero] .hvisual{width:min(880px,72%);aspect-ratio:21/9}
+   255→   255→  h1{font-size:clamp(3.6rem,4.5vw,5.2rem)}
+   256→   256→  .ambient{opacity:1}
+   257→   257→  .ctaBand{padding:88px 96px}
+   258→   258→  .footCols{text-align:center}
+   259→   259→  .footCols ul{justify-items:center}
+   260→   260→}
+   261→   261→.stats-unlock{display:none}
+   262→   262→`.replace(/\n/g, '\n');
+   263→   263→}
+   264→   264→
+   265→   265→/* ---------- copy helpers ---------- */
+   266→   266→function money(v: number): string {
+   267→   267→  return v % 1 === 0 ? `$${v}` : `$${v.toFixed(2)}`;
+   268→   268→}
+   269→   269→
+   270→   270→function brandSlug(brand: string): string {
+   271→   271→  return brand.toLowerCase().replace(/[^a-z0-9]+/g, '') + '.site';
+   272→   272→}
+   273→   273→
+   274→   274→/* ---------- render ---------- */
+   275→   275→export function renderSite(seed: string, owner: string): RenderedSite {
+   276→   276→  const { rng, niche, brand, city, design, palette } = designFromSeed(seed);
+   277→   277→  const year = new Date().getFullYear();
+   278→   278→  const email = `hello@${brandSlug(brand)}`;
+   279→   279→  const phone = `+1 (${rng.int(200, 989)}) ${rng.int(200, 989)}-${rng.int(1000, 9999)}`;
+   280→   280→
+   281→   281→  // section order: hero first; pick 6 middles; cta before footer
+   282→   282→  const pool = rng.shuffle(['about', 'services', 'gallery', 'menu', 'testimonials', 'stats', 'faq', 'contact']);
+   283→   283→  const middles = pool.slice(0, 6);
+   284→   284→  if (!middles.includes('contact')) middles[middles.length - 1] = 'contact';
+   285→   285→  design.sectionOrder = ['hero', ...middles.slice(0, 5), 'cta'];
+   286→   286→
+   287→   287→  const navAnchors = design.sectionOrder
+   288→   288→    .filter((s) => !['hero', 'cta'].includes(s))
+   289→   289→    .map((s) => ({ id: s, label: s === 'services' ? 'Services' : s === 'gallery' ? 'Work' : s === 'menu' ? niche.menuTitle.split(' ')[0] : s === 'testimonials' ? 'Reviews' : s === 'stats' ? 'Numbers' : s === 'faq' ? 'FAQ' : s === 'about' ? 'About' : 'Visit' }));
+   290→   290→
+   291→   291→  const headline = rng.pick(niche.heroLines);
+   292→   292→  const sub = `${rng.pick(niche.about)}, and we do it in ${city} — ${niche.label} for people who notice the details.`;
+   293→   293→  const heroTag = rng.pick(['Since day one', 'By appointment', 'Walk-ins welcome', 'Est. ' + rng.int(1998, 2021)]);
+   294→   294→
+   295→   295→  // visual gradients for hero + tiles
+   296→   296→  const grads = [
+   297→   297→    `linear-gradient(135deg,${palette.accent},${palette.accent2})`,
+   298→   298→    `linear-gradient(24deg,${palette.accent2},${palette.ink})`,
+   299→   299→    `radial-gradient(circle at 30% 30%,${palette.accent},${palette.ink})`,
+   300→   300→    `linear-gradient(160deg,${palette.accent} 10%,${palette.bgAlt} 90%)`,
+   301→   301→  ];
+   302→   302→
+   303→   303→  const secHtml: Record<string, string> = {};
+   304→   304→
+   305→   305→  secHtml['hero'] = `
+   306→   306→  <section class="hero" id="top"><div class="wrap heroWrap">
+   307→   307→    <div class="hcopy reveal">
+   308→   308→      <span class="kicker k${design.eyebrow === 'line' ? 'line' : design.eyebrow === 'brack' ? 'brack' : ''}">${design.eyebrow === 'dot' ? '<span class="kd"></span>' : ''}${design.eyebrow === 'number' ? `<span class="knumber">01</span>` : ''}${heroTag}</span>
+   309→   309→      <h1>${headline}</h1>
+   310→   310→      <p class="lead">${sub}</p>
+   311→   311→      <div class="hbtns">
+   312→   312→        <a class="btn btnFill" href="#contact">${rng.pick(['Book a visit', 'Get started', 'Say hello', 'Reserve yours'])}</a>
+   313→   313→        <a class="btn btnGhost" href="#${navAnchors[0]?.id ?? 'about'}">See the ${niche.label.split(' ')[0]}</a>
+   314→   314→      </div>
+   315→   315→    </div>
+   316→   316→    <div class="hvisual reveal" style="background:${grads[0]}">
+   317→   317→      <span class="heroBadge">${brand}</span>
+   318→   318→    </div>
+   319→   319→  </div></section>`;
+   320→   320→
+   321→   321→  secHtml['about'] = `
+   322→   322→  <section id="about"><div class="wrap">
+   323→   323→    <div class="secHead reveal"><span class="kicker">${design.eyebrow === 'dot' ? '<span class="kd"></span>' : ''}The idea</span><h2>${rng.pick(['Why we exist', 'The slow way, on purpose', 'What we believe'])}</h2></div>
+   324→   324→    <div class="aboutCols">
+   325→   325→      <p class="lead">${rng.pick(niche.about)}. ${rng.pick(['Nothing here is accidental.', 'Every detail is a decision.', 'We would rather do less, better.'])} ${rng.pick(['That is the whole philosophy.', 'It takes the time it takes.', 'You can feel the difference in a week.'])}</p>
+   326→   326→      <div class="pull reveal">“${rng.pick(['Quality is just patience, priced honestly.', 'Craft is a schedule you keep.', 'Details are the design.'])}”</div>
+   327→   327→    </div>
+   328→   328→  </div></section>`;
+   329→   329→
+   330→   330→  secHtml['services'] = `
+   331→   331→  <section id="services"><div class="wrap">
+   332→   332→    <div class="secHead reveal"><span class="kicker">${design.eyebrow === 'dot' ? '<span class="kd"></span>' : ''}What we do</span><h2>Six ways in</h2></div>
+   333→   333→    <div class="gridFeat">${niche.services.map((s, i) => `
+   334→   334→      <article class="card reveal"><div class="cnum">${String(i + 1).padStart(2, '0')}</div><h3>${s}</h3><p>${rng.pick(['Booked week by week.', 'Talk to us about timing.', 'The house favourite.', 'Small groups, big attention.', 'Ask us anything first.', 'Built around your schedule.'])}</p></article>`).join('')}
+   335→   335→    </div>
+   336→   336→  </div></section>`;
+   337→   337→
+   338→   338→  secHtml['gallery'] = `
+   339→   339→  <section id="gallery"><div class="wrap">
+   340→   340→    <div class="secHead reveal"><span class="kicker">${design.eyebrow === 'dot' ? '<span class="kd"></span>' : ''}Recent work</span><h2>Fresh from the bench</h2></div>
+   341→   341→    <div class="gridGal">${niche.services.slice(0, 4).map((s, i) => `
+   342→   342→      <figure class="tile reveal" style="background:${grads[i % grads.length]}"><span>${s}</span></figure>`).join('')}
+   343→   343→    </div>
+   344→   344→  </div></section>`;
+   345→   345→
+   346→   346→  const menuItems = niche.services.slice(0, 6).map((s) => {
+   347→   347→    const price = niche.priceBase * (1 + rng.float(0, 2.4));
+   348→   348→    return `<div class="menuRow"><div><b>${s}</b><small>${rng.pick(['Made to order', 'House standard', 'Seasonal', 'Most requested', 'Limited daily run'])}</small></div><i>${money(Math.round(price * 100) / 100)}</i></div>`;
+   349→   349→  }).join('');
+   350→   350→  secHtml['menu'] = `
+   351→   351→  <section id="menu"><div class="wrap">
+   352→   352→    <div class="secHead reveal"><span class="kicker">${design.eyebrow === 'dot' ? '<span class="kd"></span>' : ''}Priced plainly</span><h2>${niche.menuTitle}</h2></div>
+   353→   353→    <div class="menuList reveal">${menuItems}</div>
+   354→   354→  </div></section>`;
+   355→   355→
+   356→   356→  const stats = niche.statLabels.map((l, i) => {
+   357→   357→    const vals = [rng.int(4, 40), rng.int(60, 900), rng.int(3, 18), rng.int(1998, 2021)];
+   358→   358→    return `<div class="stat"><b>${vals[i]}${i === 1 ? '+' : ''}</b><span>${l}</span></div>`;
+   359→   359→  }).join('');
+   360→   360→  secHtml['stats'] = `
+   361→   361→  <section id="stats"><div class="wrap">
+   362→   362→    <div class="secHead reveal"><span class="kicker">${design.eyebrow === 'dot' ? '<span class="kd"></span>' : ''}Numbers, kept honest</span><h2>The scoreboard</h2></div>
+   363→   363→    <div class="gridStats reveal">${stats}</div>
+   364→   364→  </div></section>`;
+   365→   365→
+   366→   366→  secHtml['testimonials'] = `
+   367→   367→  <section id="testimonials"><div class="wrap">
+   368→   368→    <div class="secHead reveal"><span class="kicker">${design.eyebrow === 'dot' ? '<span class="kd"></span>' : ''}Word of mouth</span><h2>What people say</h2></div>
+   369→   369→    <div class="quotes">
+   370→   370→      <blockquote class="quote reveal"><p>“${niche.quotes[0]}”</p><footer>— ${rng.pick(['Maren', 'Diego', 'Priya', 'Tomás', 'Ada', 'Jonas'])}, ${city}</footer></blockquote>
+   371→   371→      <blockquote class="quote reveal"><p>“${niche.quotes[1]}”</p><footer>— ${rng.pick(['Sofia', 'Kwame', 'Elin', 'Marco', 'Yuki', 'Ruth'])}, regular since ${rng.int(2019, 2025)}</footer></blockquote>
+   372→   372→    </div>
+   373→   373→  </div></section>`;
+   374→   374→
+   375→   375→  const genericFaqs = [
+   376→   376→    { q: 'Where are you?', a: `${rng.pick(['Right by', 'Two doors from', 'Behind the arches of'])} ${niche.place} in ${city} — knock during opening hours.` },
+   377→   377→    { q: 'How do I reach you fastest?', a: `Email ${email} or call ${phone}. We answer within one working day.` },
+   378→   378→    { q: 'Do you do gift options?', a: rng.pick(['Yes — ask at the counter and we will wrap it properly.', 'Absolutely, with a handwritten note at no charge.']) },
+   379→   379→  ];
+   380→   380→  secHtml['faq'] = `
+   381→   381→  <section id="faq"><div class="wrap faq">
+   382→   382→    <div class="secHead reveal"><span class="kicker">${design.eyebrow === 'dot' ? '<span class="kd"></span>' : ''}Asked often</span><h2>Good questions</h2></div>
+   383→   383→    ${[...niche.faq, ...genericFaqs].slice(0, 5).map((f) => `<details><summary>${f.q}</summary><p class="fa">${f.a}</p></details>`).join('')}
+   384→   384→  </div></section>`;
+   385→   385→
+   386→   386→  const hours = rng.pick([
+   387→   387→    ['Mon–Fri 8–18', 'Sat 9–16', 'Sun closed'],
+   388→   388→    ['Tue–Sat 10–20', 'Sun 11–15', 'Mon closed'],
+   389→   389→    ['Mon–Sat 9–19', 'Sun 10–14', 'Late night Thu'],
+   390→   390→  ]);
+   391→   391→  secHtml['contact'] = `
+   392→   392→  <section id="contact"><div class="wrap">
+   393→   393→    <div class="secHead reveal"><span class="kicker">${design.eyebrow === 'dot' ? '<span class="kd"></span>' : ''}Visit</span><h2>Find us in ${city}</h2></div>
+   394→   394→    <div class="contactCols">
+   395→   395→      <div class="cbox reveal"><h3>Address</h3><p>${rng.int(2, 148)} ${niche.place}<br/>${city}</p></div>
+   396→   396→      <div class="cbox reveal"><h3>Hours</h3><ul>${hours.map((h) => `<li>${h}</li>`).join('')}</ul></div>
+   397→   397→      <div class="cbox reveal"><h3>Contact</h3><ul><li><a href="mailto:${email}">${email}</a></li><li>${phone}</li></ul></div>
+   398→   398→    </div>
+   399→   399→  </div></section>`;
+   400→   400→
+   401→   401→  secHtml['cta'] = `
+   402→   402→  <section id="cta"><div class="wrap"><div class="ctaBand reveal">
+   403→   403→    <h2>${rng.pick(['Ready when you are.', 'Come see for yourself.', 'One message starts it.'])}</h2>
+   404→   404→    <p style="opacity:.85;margin-bottom:20px">${rng.pick(['No pressure, no scripts.', 'Tell us what you need.', 'We reply within a day.'])}</p>
+   405→   405→    <a class="btn" href="#contact">${rng.pick(['Book now', 'Start the conversation', 'Claim your spot'])}</a>
+   406→   406→  </div></div></section>`;
+   407→   407→
+   408→   408→  const fontsUrl = `https://fonts.googleapis.com/css2?family=${design.fontHead.replace(/ /g, '+')}:wght@400;600;700;800&family=${design.fontBody.replace(/ /g, '+')}:wght@400;500;700&display=swap`;
+   409→   409→  const navLinksHtml = navAnchors.map((a, i) => `<li class="${i > 2 ? 'hideD2' : ''}"><a href="#${a.id}">${a.label}</a></li>`).join('');
+   410→   410→  const drawerLinks = navAnchors.map((a) => `<a class="dl" href="#${a.id}">${a.label}</a>`).join('');
+   411→   411→
+   412→   412→  const html = `<!DOCTYPE html>
+   413→   413→<html lang="en" data-hero="${design.heroVariant}">
+   414→   414→<head>
+   415→   415→<meta charset="UTF-8"/>
+   416→   416→<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+   417→   417→<title>${brand} — ${niche.label} in ${city}</title>
+   418→   418→<meta name="description" content="${headline} ${brand}, a ${niche.label} in ${city}. ${sub}"/>
+   419→   419→<link rel="preconnect" href="https://fonts.googleapis.com"/>
+   420→   420→<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+   421→   421→<link href="${fontsUrl}" rel="stylesheet"/>
+   422→   422→<style>${buildCss(palette, design, niche)}</style>
+   423→   423→</head>
+   424→   424→<body data-hero="${design.heroVariant}" data-motif="${design.motif}">
+   425→   425→<div class="ambient" aria-hidden="true"></div>
+   426→   426→<header class="nav"><div class="wrap navIn">
+   427→   427→  <a class="logo" href="#top"><span class="logoDot"></span>${brand}</a>
+   428→   428→  <ul class="navLinks">${navLinksHtml}</ul>
+   429→   429→  <a class="btn btnFill navCta" href="#contact" style="min-height:44px">${rng.pick(['Book', 'Enquire', 'Visit'])}</a>
+   430→   430→  <button class="burger" aria-label="Open menu" aria-expanded="false" onclick="document.getElementById('drawer').classList.add('open');this.setAttribute('aria-expanded','true')"><span></span><span></span><span></span></button>
+   431→   431→</div></header>
+   432→   432→<nav class="drawer" id="drawer" aria-label="Mobile menu">
+   433→   433→  <div class="drawerTop"><span class="logo"><span class="logoDot"></span>${brand}</span>
+   434→   434→  <button class="burger" style="display:inline-flex" aria-label="Close menu" onclick="document.getElementById('drawer').classList.remove('open');document.querySelectorAll('.burger')[0].setAttribute('aria-expanded','false')"><span style="transform:rotate(45deg) translateY(5px)"></span><span style="opacity:0"></span><span style="transform:rotate(-45deg) translateY(-5px)"></span></button></div>
+   435→   435→  ${drawerLinks}
+   436→   436→  <a class="btn btnFill" href="#contact" onclick="document.getElementById('drawer').classList.remove('open')">Book a visit</a>
+   437→   437→</nav>
+   438→   438→<main>
+   439→   439→${design.sectionOrder.map((s) => secHtml[s]).join('\n')}
+   440→   440→</main>
+   441→   441→<footer class="site"><div class="wrap">
+   442→   442→  <div class="footCols">
+   443→   443→    <div><a class="logo" href="#top" style="color:var(--ink)"><span class="logoDot"></span>${brand}</a>
+   444→   444→      <p style="color:var(--inkSoft);font-size:.92rem;margin-top:10px;max-width:34ch">${headline} ${brand} — ${niche.label} in ${city}, since ${rng.int(1998, 2021)}.</p>
+   445→   445→      <div class="mega-only" style="margin-top:16px"><h4>First to know</h4><p style="color:var(--inkSoft);font-size:.9rem">Seasonal notes, once a month. No noise.</p>
+   446→   446→      <form style="display:flex;gap:8px;margin-top:10px" onsubmit="event.preventDefault();this.innerHTML='<small>Thank you — you are on the list.</small>'">
+   447→   447→        <input type="email" required placeholder="you@example.com" style="flex:1;min-height:44px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--btnR);background:var(--surface);color:var(--ink);font-family:var(--fb)"/>
+   448→   448→        <button class="btn btnFill" style="min-height:44px">Join</button></form></div></div>
+   449→   449→    <div><h4>Explore</h4><ul>${navAnchors.map((a) => `<li><a href="#${a.id}">${a.label}</a></li>`).join('')}</ul></div>
+   450→   450→    <div><h4>Visit</h4><ul><li>${rng.int(2, 148)} ${niche.place}</li><li>${city}</li><li><a href="mailto:${email}">${email}</a></li><li>${phone}</li></ul></div>
+   451→   451→    <div><h4>Legal</h4><ul><li><a href="#top">Privacy</a></li><li><a href="#top">Terms</a></li><li><a href="#top">Accessibility</a></li></ul></div>
+   452→   452→  </div>
+   453→   453→  <div class="copy">
+   454→   454→    <span>© <span class="stamp">${year}</span> ${owner}. All rights reserved.</span>
+   455→   455→    <span class="stamp">Grown by Beast Web Developer · seed ${seed.slice(0, 8)} · ${palette.name} / ${design.heroVariant} hero</span>
+   456→   456→  </div>
+   457→   457→</div></footer>
+   458→   458→<div class="mbar"><a class="btn btnFill" href="tel:${phone.replace(/[^+\d]/g, '')}">Call</a><a class="btn btnGhost" href="#contact" style="background:var(--bg)">Book</a></div>
+   459→   459→<script>
+   460→   460→  var y=document.querySelectorAll('.stamp');for(var i=0;i<y.length;i++){if(y[i].textContent.length===4)y[i].textContent=new Date().getFullYear()}
+   461→   461→  ${design.reveal ? `var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}})},{threshold:.12});
+   462→   462→  document.querySelectorAll('.reveal').forEach(function(el){io.observe(el)});` : `document.querySelectorAll('.reveal').forEach(function(el){el.classList.add('in')});`}
+   463→   463→</script>
+   464→   464→</body>
+   465→   465→</html>`;
+   466→   466→
+   467→   467→  return { brand, niche, city, design, palette, html, email, phone };
+   468→   468→}
+   469→   469→
+   470→   470→export { DEVICE_CLASSES };
+   471→   471→

@@ -170,6 +170,16 @@ h3{font-size:clamp(1.05rem,2vw,calc(1.3rem*var(--fx)));font-weight:600}
 .cbox h3{margin-bottom:8px}
 .cbox p,.cbox li{color:var(--inkSoft);font-size:.95rem}
 .cbox ul{list-style:none;display:grid;gap:6px}
+.cform{margin-top:34px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:26px;display:grid;gap:14px;max-width:640px}
+.cform h3{margin:0}
+.cform label{display:grid;gap:6px;font-size:.85rem;font-weight:600;color:var(--inkSoft)}
+.cform input,.cform textarea{font-family:var(--fb);font-size:1rem;color:var(--ink);background:var(--bg);border:1px solid var(--border);border-radius:calc(var(--radius) * .6);padding:12px 14px;min-height:44px}
+.cform textarea{resize:vertical}
+.cform input:focus-visible,.cform textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.cform .frow{display:grid;gap:14px}
+.cform small{color:var(--inkSoft);font-size:.8rem}
+.skip{position:absolute;left:-9999px;top:0;z-index:100;background:var(--accent);color:var(--onAccent);padding:12px 18px;font-weight:700;border-radius:0 0 var(--radius) 0}
+.skip:focus{left:0}
 /* footer */
 footer.site{border-top:1px solid var(--border);padding:40px 0 calc(28px + env(safe-area-inset-bottom));background:var(--bgAlt)}
 .footCols{display:grid;grid-template-columns:1fr;gap:24px}
@@ -383,19 +393,38 @@ export function renderSite(seed: string, owner: string): RenderedSite {
     ${[...niche.faq, ...genericFaqs].slice(0, 5).map((f) => `<details><summary>${f.q}</summary><p class="fa">${f.a}</p></details>`).join('')}
   </div></section>`;
 
+  // one address everywhere (Repetition: the same facts repeat, never drift)
+  const streetNo = rng.int(2, 148);
+  // structured hours: display strings for humans, spec for JSON-LD (Google format)
   const hours = rng.pick([
-    ['Mon–Fri 8–18', 'Sat 9–16', 'Sun closed'],
-    ['Tue–Sat 10–20', 'Sun 11–15', 'Mon closed'],
-    ['Mon–Sat 9–19', 'Sun 10–14', 'Late night Thu'],
+    { display: ['Mon–Fri 8–18', 'Sat 9–16', 'Sun closed'], spec: [
+      { d: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], o: '08:00', c: '18:00' },
+      { d: ['Saturday'], o: '09:00', c: '16:00' }] },
+    { display: ['Tue–Sat 10–20', 'Sun 11–15', 'Mon closed'], spec: [
+      { d: ['Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'], o: '10:00', c: '20:00' },
+      { d: ['Sunday'], o: '11:00', c: '15:00' }] },
+    { display: ['Mon–Sat 9–19', 'Sun 10–14'], spec: [
+      { d: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'], o: '09:00', c: '19:00' },
+      { d: ['Sunday'], o: '10:00', c: '14:00' }] },
   ]);
   secHtml['contact'] = `
   <section id="contact"><div class="wrap">
     <div class="secHead reveal"><span class="kicker">${design.eyebrow === 'dot' ? '<span class="kd"></span>' : ''}Visit</span><h2>Find us in ${city}</h2></div>
     <div class="contactCols">
-      <div class="cbox reveal"><h3>Address</h3><p>${rng.int(2, 148)} ${niche.place}<br/>${city}</p></div>
-      <div class="cbox reveal"><h3>Hours</h3><ul>${hours.map((h) => `<li>${h}</li>`).join('')}</ul></div>
+      <div class="cbox reveal"><h3>Address</h3><p>${streetNo} ${niche.place}<br/>${city}</p></div>
+      <div class="cbox reveal"><h3>Hours</h3><ul>${hours.display.map((h) => `<li>${h}</li>`).join('')}</ul></div>
       <div class="cbox reveal"><h3>Contact</h3><ul><li><a href="mailto:${email}">${email}</a></li><li>${phone}</li></ul></div>
     </div>
+    <form class="cform reveal" onsubmit="event.preventDefault();var f=this.elements;location.href='mailto:${email}?subject='+encodeURIComponent('Enquiry from '+f.name.value)+'&body='+encodeURIComponent(f.body.value+'\\n\\n— '+f.name.value+' ('+f.from.value+')')">
+      <h3>Send a note</h3>
+      <div class="frow">
+        <label>Name<input required name="name" type="text" autocomplete="name" placeholder="Your name"/></label>
+        <label>Email<input required name="from" type="email" autocomplete="email" placeholder="you@example.com"/></label>
+      </div>
+      <label>Message<textarea required name="body" rows="4" placeholder="Tell us what you need"></textarea></label>
+      <button class="btn btnFill" type="submit">Send message</button>
+      <small>No servers here — this opens your mail app with everything filled in.</small>
+    </form>
   </div></section>`;
 
   secHtml['cta'] = `
@@ -406,6 +435,27 @@ export function renderSite(seed: string, owner: string): RenderedSite {
   </div></div></section>`;
 
   const fontsUrl = `https://fonts.googleapis.com/css2?family=${design.fontHead.replace(/ /g, '+')}:wght@400;600;700;800&family=${design.fontBody.replace(/ /g, '+')}:wght@400;500;700&display=swap`;
+
+  /* ---------- SEO & social pack (no domain known → buyer swaps one placeholder) ---------- */
+  const initial = (brand.replace(/^The /i, '').trim().charAt(0) || 'B').toUpperCase();
+  const favSvg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='${palette.accent}'/><text x='32' y='43' font-family='Arial,sans-serif' font-size='34' font-weight='800' text-anchor='middle' fill='${palette.inkOnAccent}'>${initial}</text></svg>`;
+  const favicon = `data:image/svg+xml,${encodeURIComponent(favSvg)}`;
+  const SCHEMA_TYPE: Record<string, string> = {
+    coffee: 'CafeOrCoffeeShop', bakery: 'Bakery', jazz: 'BarOrPub', books: 'BookStore',
+    florist: 'Florist', tattoo: 'TattooParlor', plants: 'GardenStore', yoga: 'ExerciseGym',
+    architecture: 'ProfessionalService', agency: 'ProfessionalService', surf: 'SportsActivityLocation', ceramics: 'LocalBusiness',
+  };
+  const jsonLd = JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': SCHEMA_TYPE[niche.key] ?? 'LocalBusiness',
+    name: brand,
+    description: `${headline} ${brand} — ${niche.label} in ${city}.`,
+    email,
+    telephone: phone,
+    priceRange: `$${niche.priceBase}–$${niche.priceBase * 8}`,
+    address: { '@type': 'PostalAddress', streetAddress: `${streetNo} ${niche.place}`, addressLocality: city, addressCountry: 'US' },
+    openingHoursSpecification: hours.spec.map((s) => ({ '@type': 'OpeningHoursSpecification', dayOfWeek: s.d, opens: s.o, closes: s.c })),
+  });
   const navLinksHtml = navAnchors.map((a, i) => `<li class="${i > 2 ? 'hideD2' : ''}"><a href="#${a.id}">${a.label}</a></li>`).join('');
   const drawerLinks = navAnchors.map((a) => `<a class="dl" href="#${a.id}">${a.label}</a>`).join('');
 
@@ -416,12 +466,24 @@ export function renderSite(seed: string, owner: string): RenderedSite {
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>${brand} — ${niche.label} in ${city}</title>
 <meta name="description" content="${headline} ${brand}, a ${niche.label} in ${city}. ${sub}"/>
+<meta name="theme-color" content="${palette.bg}"/>
+<link rel="icon" href="${favicon}"/>
+<meta property="og:type" content="website"/>
+<meta property="og:site_name" content="${brand}"/>
+<meta property="og:title" content="${brand} — ${niche.label} in ${city}"/>
+<meta property="og:description" content="${headline}"/>
+<meta property="og:locale" content="en_US"/>
+<meta name="twitter:card" content="summary"/>
+<meta name="twitter:title" content="${brand} — ${niche.label} in ${city}"/>
+<meta name="twitter:description" content="${headline}"/>
+<script type="application/ld+json">${jsonLd}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="${fontsUrl}" rel="stylesheet"/>
 <style>${buildCss(palette, design, niche)}</style>
 </head>
 <body data-hero="${design.heroVariant}" data-motif="${design.motif}">
+<a class="skip" href="#main">Skip to content</a>
 <div class="ambient" aria-hidden="true"></div>
 <header class="nav"><div class="wrap navIn">
   <a class="logo" href="#top"><span class="logoDot"></span>${brand}</a>
@@ -435,7 +497,7 @@ export function renderSite(seed: string, owner: string): RenderedSite {
   ${drawerLinks}
   <a class="btn btnFill" href="#contact" onclick="document.getElementById('drawer').classList.remove('open')">Book a visit</a>
 </nav>
-<main>
+<main id="main">
 ${design.sectionOrder.map((s) => secHtml[s]).join('\n')}
 </main>
 <footer class="site"><div class="wrap">
@@ -447,7 +509,7 @@ ${design.sectionOrder.map((s) => secHtml[s]).join('\n')}
         <input type="email" required placeholder="you@example.com" style="flex:1;min-height:44px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--btnR);background:var(--surface);color:var(--ink);font-family:var(--fb)"/>
         <button class="btn btnFill" style="min-height:44px">Join</button></form></div></div>
     <div><h4>Explore</h4><ul>${navAnchors.map((a) => `<li><a href="#${a.id}">${a.label}</a></li>`).join('')}</ul></div>
-    <div><h4>Visit</h4><ul><li>${rng.int(2, 148)} ${niche.place}</li><li>${city}</li><li><a href="mailto:${email}">${email}</a></li><li>${phone}</li></ul></div>
+    <div><h4>Visit</h4><ul><li>${streetNo} ${niche.place}</li><li>${city}</li><li><a href="mailto:${email}">${email}</a></li><li>${phone}</li></ul></div>
     <div><h4>Legal</h4><ul><li><a href="#top">Privacy</a></li><li><a href="#top">Terms</a></li><li><a href="#top">Accessibility</a></li></ul></div>
   </div>
   <div class="copy">
