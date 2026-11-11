@@ -26,7 +26,9 @@ INCLUDE_FILES = [
     "components.json",
     ".gitignore",
     "README-BEAST.md",
+    "DEPLOY.md",
     "render.yaml",
+    ".node-version",
 ]
 EXCLUDE_PARTS = {"node_modules", ".next", ".git"}
 
@@ -71,6 +73,7 @@ with zipfile.ZipFile(OUT) as zf:
         "beast-web-developer/src/app/page.tsx",
         "beast-web-developer/src/app/api/beast/route.ts",
         "beast-web-developer/src/app/api/beast/test/route.ts",
+        "beast-web-developer/src/app/api/health/route.ts",
         "beast-web-developer/src/app/api/beast/site/[id]/route.ts",
         "beast-web-developer/src/app/api/beast/site/[id]/zip/route.ts",
         "beast-web-developer/src/app/api/beast/zip-all/route.ts",
@@ -86,6 +89,9 @@ with zipfile.ZipFile(OUT) as zf:
         "beast-web-developer/scripts/package-app.py",
         "beast-web-developer/package.json",
         "beast-web-developer/README-BEAST.md",
+        "beast-web-developer/DEPLOY.md",
+        "beast-web-developer/render.yaml",
+        "beast-web-developer/.node-version",
         "beast-web-developer/.env",
         "beast-web-developer/db/.gitkeep",
     ]

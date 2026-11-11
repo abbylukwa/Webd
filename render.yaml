@@ -22,6 +22,15 @@ services:
         value: 22.11.0
       - key: BEAST_DATA_DIR
         value: /opt/render/project/src/data
+      # Insurance for the 512 MB free instance (mirrors whatsapp-qr-app's
+      # working config). The Beast build compiles in ~10 s and is light,
+      # but the cap prevents any surprise on busier days.
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=400
+      # Harmless insurance: guarantees the server binds the public
+      # interface regardless of container-injected HOSTNAME values.
+      - key: HOSTNAME
+        value: 0.0.0.0
 
     # ---- PERSISTENCE (paid plans only) ------------------------------------
     # Render's filesystem is EPHEMERAL on the free plan: every deploy and
