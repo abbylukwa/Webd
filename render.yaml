@@ -1,17 +1,38 @@
-# Render Blueprint — THE BEAST · autonomous web studio
-# Deploy with: Render Dashboard → New → Blueprint → pick this repo.
-# Or configure a Node Web Service manually with exactly these commands.
+# Render Blueprint for the Beast Web Developer studio.
+# Use: Render Dashboard -> New + -> Blueprint -> point at this repo,
+# and every setting below (build, start, health check, env vars) is applied.
+#
+# The owner already deploys with the same commands by hand:
+#   build: bun install --frozen-lockfile && bun run build
+#   start: node .next/standalone/server.js
+# This file adds the two things the manual setup is missing:
+# a Health Check Path and the NODE_VERSION pin.
+
 services:
   - type: web
     name: beast-web-developer
     runtime: node
     plan: free
-    buildCommand: npm install && npm run build
-    startCommand: npm run start
+    buildCommand: bun install --frozen-lockfile && bun run build
+    startCommand: node .next/standalone/server.js
+    healthCheckPath: /api/health
+    autoDeployTrigger: default
     envVars:
       - key: NODE_VERSION
-        value: "22"
-      - key: HOSTNAME
-        value: 0.0.0.0
-      - key: NODE_ENV
-        value: production
+        value: 22.11.0
+      - key: BEAST_DATA_DIR
+        value: /opt/render/project/src/data
+
+    # ---- PERSISTENCE (paid plans only) ------------------------------------
+    # Render's filesystem is EPHEMERAL on the free plan: every deploy and
+    # restart wipes /data (the studio resets to DAY 1 and the owner name
+    # resets). To keep the studio's memory across deploys, upgrade the plan
+    # and switch to a mounted disk:
+    #
+    #   plan: starter
+    #   disk:
+    #     name: beast-data
+    #     mountPath: /var/data
+    #     sizeGB: 1
+    #
+    # ...and change the BEAST_DATA_DIR env var above to /var/data.
