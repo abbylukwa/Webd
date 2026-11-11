@@ -1,0 +1,17 @@
+# Render Blueprint — THE BEAST · autonomous web studio
+# Deploy with: Render Dashboard → New → Blueprint → pick this repo.
+# Or configure a Node Web Service manually with exactly these commands.
+services:
+  - type: web
+    name: beast-web-developer
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: HOSTNAME
+        value: 0.0.0.0
+      - key: NODE_ENV
+        value: production

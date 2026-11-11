@@ -26,6 +26,7 @@ INCLUDE_FILES = [
     "components.json",
     ".gitignore",
     "README-BEAST.md",
+    "render.yaml",
 ]
 EXCLUDE_PARTS = {"node_modules", ".next", ".git"}
 
