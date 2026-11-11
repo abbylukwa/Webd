@@ -1,0 +1,683 @@
+     1→// Beast Site Renderer — turns a seed into a complete, standalone, handcrafted-feeling
+     2→// website. One site, five device classes, five DIFFERENT relative layouts:
+     3→//   D1 phone  ≤640    — 1-col stack, drawer nav, poster hero, sticky CTA bar
+     4→//   D2 tablet 641–1024 — 2-col grids, condensed nav, centered hero
+     5→//   D3 laptop 1025–1440 — 3-col, inline nav, split hero 55/45
+     6→//   D4 desktop 1441–1920 — 4-col, capped container, stats row, mega footer
+     7→//   D5 ultra  ≥1921   — 5-col, cinematic monumental hero, ambient stage
+     8→// Relative units everywhere: %, fr, clamp(), rem, aspect-ratio — no fixed px widths.
+     9→import { seedFrom, type RNG } from './rng';
+    10→import { buildPalette, deriveDarkTokens, type ContrastPair, type DarkTokens, type Palette } from './palette';
+    11→import {
+    12→  ADJECTIVES, BODY_FONTS, CITIES, DEVICE_CLASSES, HEAD_FONTS, NICHES, SURNAMES,
+    13→  type DesignSpec, type HeroVariant, type Motif, type NavVariant, type Niche,
+    14→} from './spec';
+    15→
+    16→export type RenderedSite = {
+    17→  brand: string;
+    18→  niche: Niche;
+    19→  city: string;
+    20→  design: DesignSpec;
+    21→  palette: Palette;
+    22→  html: string;
+    23→  email: string;
+    24→  phone: string;
+    25→  darkReport?: ContrastPair[]; // WCAG report for the prefers-color-scheme dark tokens (undefined when the site is natively dark)
+    26→};
+    27→
+    28→/* ---------- design spec from seed ---------- */
+    29→export function designFromSeed(seed: string): { rng: RNG; niche: Niche; brand: string; city: string; design: DesignSpec; palette: Palette } {
+    30→  const rng = seedFrom(seed);
+    31→  const niche = rng.pick(NICHES);
+    32→  const city = rng.pick(CITIES);
+    33→
+    34→  // naming grammar
+    35→  const pattern = rng.pick(['theAdjNoun', 'compound', 'surname', 'plainNoun'] as const);
+    36→  const adj = rng.pick(ADJECTIVES);
+    37→  const noun = rng.pick(niche.nouns);
+    38→  const brand =
+    39→    pattern === 'theAdjNoun' ? `The ${adj} ${noun}`
+    40→    : pattern === 'compound' ? `${adj}${noun}`
+    41→    : pattern === 'surname' ? `${rng.pick(SURNAMES)}'s ${niche.label.split(' ')[0].replace(/^\w/, (c) => c.toUpperCase())}`
+    42→    : `${noun} & ${rng.pick(ADJECTIVES)}`;
+    43→
+    44→  const palette = buildPalette(rng);
+    45→  const design: DesignSpec = {
+    46→    heroVariant: rng.pick(['poster', 'split', 'cinematic', 'editorial', 'diagonal', 'marquee'] as HeroVariant[]),
+    47→    navVariant: rng.pick(['drawer', 'inline', 'pill', 'topline'] as NavVariant[]),
+    48→    motif: rng.pick(['grain', 'blobs', 'grid', 'rings', 'waves', 'dots', 'arc'] as Motif[]),
+    49→    radius: rng.pick([0, 2, 4, 8, 12, 16, 20]),
+    50→    btnRadius: rng.pick([0, 4, 8, 999]),
+    51→    spaceRhythm: rng.pick(['compact', 'cozy', 'generous'] as const),
+    52→    sectionOrder: [],
+    53→    eyebrow: rng.pick(['dot', 'line', 'bracket', 'number'] as const),
+    54→    displayCase: rng.pick(['upper', 'title', 'lower'] as const),
+    55→    fontHead: (function(){ const fh = rng.pick(HEAD_FONTS); return fh; })(),
+    56→    fontBody: rng.pick(BODY_FONTS),
+    57→    reveal: rng.chance(0.8),
+    58→    darkNav: palette.theme === 'dark' ? rng.chance(0.5) : rng.chance(0.15),
+    59→  };
+    60→  return { rng, niche, brand, city, design, palette };
+    61→}
+    62→
+    63→/* ---------- css ---------- */
+    64→// Motifs are painted with token vars + color-mix (never hardcoded hex), so the
+    65→// whole surface re-tints automatically under prefers-color-scheme: dark.
+    66→function motifCss(motif: Motif): string {
+    67→  switch (motif) {
+    68→    case 'grain': return `.ambient{opacity:.5;background-image:radial-gradient(var(--border) .8px,transparent .8px),radial-gradient(var(--border) .8px,transparent .8px);background-size:22px 22px,22px 22px;background-position:0 0,11px 11px;}`;
+    69→    case 'blobs': return `.ambient{opacity:.6;background:radial-gradient(600px 400px at 12% 8%,color-mix(in srgb,var(--accent) 13%,transparent),transparent 60%),radial-gradient(700px 500px at 88% 20%,color-mix(in srgb,var(--accent2) 12%,transparent),transparent 65%),radial-gradient(500px 600px at 50% 100%,color-mix(in srgb,var(--accent) 8%,transparent),transparent 60%);}`;
+    70→    case 'grid': return `.ambient{opacity:.45;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:56px 56px;}`;
+    71→    case 'rings': return `.ambient{opacity:.5;background:repeating-radial-gradient(circle at 85% 10%,transparent 0 46px,var(--border) 46px 47px);}`;
+    72→    case 'waves': return `.ambient{opacity:.5;background:repeating-linear-gradient(115deg,transparent 0 38px,var(--border) 38px 39px);}`;
+    73→    case 'dots': return `.ambient{opacity:.55;background-image:radial-gradient(color-mix(in srgb,var(--inkSoft) 33%,transparent) 1.2px,transparent 1.2px);background-size:26px 26px;}`;
+    74→    default: return `.ambient{opacity:.5;background:radial-gradient(120% 90% at 50% -20%,transparent 60%,color-mix(in srgb,var(--accent) 9%,transparent) 100%);}`;
+    75→  }
+    76→}
+    77→
+    78→function buildCss(p: Palette, d: DesignSpec, niche: Niche, dk?: DarkTokens): string {
+    79→  const sp = d.spaceRhythm === 'compact' ? 64 : d.spaceRhythm === 'cozy' ? 88 : 112;
+    80→  const headCase = d.displayCase === 'upper' ? 'uppercase' : d.displayCase === 'lower' ? 'lowercase' : 'none';
+    81→  const navBg = d.darkNav ? p.ink : p.bg;
+    82→  const navInk = d.darkNav ? p.bg : p.ink;
+    83→  const heroMap: Record<HeroVariant, string> = {
+    84→    poster: '1fr', split: '1fr', cinematic: '1fr', editorial: '1fr', diagonal: '1fr', marquee: '1fr',
+    85→  };
+    86→  return `
+    87→:root{
+    88→  --bg:${p.bg};--bgAlt:${p.bgAlt};--surface:${p.surface};--ink:${p.ink};--inkSoft:${p.inkSoft};
+    89→  --accent:${p.accent};--accent2:${p.accent2};--onAccent:${p.inkOnAccent};--border:${p.border};
+    90→  --navBg:${navBg};--navInk:${navInk};
+    91→  color-scheme:${p.theme === 'dark' ? 'dark' : 'light'};
+    92→  --fh:'${d.fontHead}',serif;--fb:'${d.fontBody}',sans-serif;
+    93→  --radius:${d.radius}px;--btnR:${d.btnRadius === 999 ? '999px' : d.btnRadius + 'px'};
+    94→  --container:100%;--gut:16px;--spSec:${sp * 0.6}px;--fx:1;
+    95→  --heroCols:${heroMap[d.heroVariant]};
+    96→}
+    97→*{margin:0;padding:0;box-sizing:border-box}
+    98→html{scroll-behavior:smooth}
+    99→body{background:var(--bg);color:var(--ink);font-family:var(--fb);line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+   100→img,svg{max-width:100%;display:block}
+   101→a{color:inherit;text-decoration:none}
+   102→:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:2px}
+   103→@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+   104→.ambient{position:fixed;inset:0;z-index:-1;pointer-events:none}
+   105→${motifCss(d.motif)}
+   106→.wrap{width:var(--container);margin-inline:auto;padding-inline:var(--gut)}
+   107→section{padding-block:var(--spSec)}
+   108→h1,h2,h3{font-family:var(--fh);line-height:1.08;letter-spacing:-.01em}
+   109→h1{font-size:clamp(1.9rem,6vw,calc(2.4rem*var(--fx)));text-transform:${headCase};font-weight:700}
+   110→h2{font-size:clamp(1.5rem,3.6vw,calc(2.2rem*var(--fx)));text-transform:${headCase};font-weight:600}
+   111→h3{font-size:clamp(1.05rem,2vw,calc(1.3rem*var(--fx)));font-weight:600}
+   112→.kicker{display:inline-flex;align-items:center;gap:8px;color:var(--accent);font-weight:700;letter-spacing:.14em;text-transform:uppercase;font-size:.72rem;margin-bottom:14px}
+   113→.kicker .kd{width:8px;height:8px;background:var(--accent);border-radius:50%}
+   114→.kicker.kline::before{content:'';width:28px;height:2px;background:var(--accent)}
+   115→.kicker.kbrack::before{content:'[';color:var(--accent);font-weight:700}.kicker.kbrack::after{content:']';color:var(--accent);font-weight:700}
+   116→.knumber{color:var(--inkSoft);font-variant-numeric:tabular-nums;margin-right:2px}
+   117→.lead{color:var(--inkSoft);font-size:clamp(1rem,1.6vw,1.15rem);max-width:56ch}
+   118→.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:56px;padding:12px 24px;border-radius:var(--btnR);font-weight:700;font-size:.95rem;border:2px solid transparent;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,background .18s ease}
+   119→.btn:active{transform:translateY(1px)}
+   120→.btnFill{background:var(--accent);color:var(--onAccent)}
+   121→.btnFill:hover{box-shadow:0 10px 24px -10px color-mix(in srgb,var(--accent) 53%,transparent);transform:translateY(-1px)}
+   122→.btnGhost{border-color:var(--ink);color:var(--ink);background:transparent}
+   123→.btnGhost:hover{background:color-mix(in srgb,var(--ink) 5%,transparent)}
+   124→/* NAV — D1: drawer */
+   125→.nav{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--navBg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid ${d.darkNav ? 'transparent' : 'var(--border)'}}
+   126→.navIn{display:flex;align-items:center;justify-content:space-between;min-height:64px;gap:16px}
+   127→.logo{font-family:var(--fh);font-weight:700;font-size:1.15rem;color:var(--navInk);display:flex;align-items:center;gap:10px}
+   128→.logoDot{width:12px;height:12px;border-radius:50%;background:var(--accent);flex:none}
+   129→.navLinks{display:none;gap:26px;list-style:none}
+   130→.navLinks a{color:var(--navInk);opacity:.8;font-size:.92rem;font-weight:600}
+   131→.navLinks a:hover{opacity:1}
+   132→.navCta{display:none}
+   133→.burger{display:inline-flex;flex-direction:column;gap:5px;background:none;border:0;padding:10px;min-width:44px;min-height:44px;cursor:pointer}
+   134→.burger span{width:22px;height:2px;background:var(--navInk);transition:.25s}
+   135→.drawer{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;flex-direction:column;padding:24px;transform:translateY(-100%);transition:transform .32s cubic-bezier(.2,.8,.2,1)}
+   136→.drawer.open{transform:translateY(0)}
+   137→.drawerTop{display:flex;justify-content:space-between;align-items:center}
+   138→.drawer a.dl{font-family:var(--fh);font-size:1.9rem;padding:14px 0;border-bottom:1px solid var(--border);color:var(--ink)}
+   139→.drawer .btn{margin-top:auto}
+   140→/* sections */
+   141→.secHead{margin-bottom:34px;display:flex;flex-direction:column;gap:10px}
+   142→.gridFeat{display:grid;grid-template-columns:1fr;gap:14px}
+   143→.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px;transition:transform .2s ease,box-shadow .2s ease}
+   144→.card:hover{transform:translateY(-3px);box-shadow:0 18px 40px -22px color-mix(in srgb,var(--ink) 33%,transparent)}
+   145→.card .cnum{font-variant-numeric:tabular-nums;color:var(--accent);font-weight:800;font-size:.8rem;letter-spacing:.1em}
+   146→.card p{color:var(--inkSoft);font-size:.95rem;margin-top:8px}
+   147→.gridGal{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+   148→.tile{aspect-ratio:4/3;border-radius:var(--radius);position:relative;overflow:hidden;display:flex;align-items:flex-end;padding:14px;color:#fff;font-weight:700;text-shadow:0 1px 8px rgba(0,0,0,.35)}
+   149→.tile span{position:relative;z-index:1;font-size:.85rem;letter-spacing:.04em}
+   150→.gridStats{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+   151→.stat{border-top:2px solid var(--accent);padding-top:10px}
+   152→.stat b{font-family:var(--fh);font-size:clamp(1.6rem,4vw,2.4rem);display:block;line-height:1}
+   153→.stat span{color:var(--inkSoft);font-size:.85rem}
+   154→.menuList{display:grid;gap:10px}
+   155→.menuRow{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:14px 0;border-bottom:1px dashed var(--border)}
+   156→.menuRow b{font-family:var(--fh);font-weight:600}
+   157→.menuRow i{font-style:normal;color:var(--accent);font-weight:700;white-space:nowrap}
+   158→.menuRow small{display:block;color:var(--inkSoft);font-size:.85rem}
+   159→.quotes{display:grid;gap:14px}
+   160→.quote{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--radius);padding:20px}
+   161→.quote p{font-family:var(--fh);font-size:1.05rem;line-height:1.5}
+   162→.quote footer{margin-top:10px;color:var(--inkSoft);font-size:.85rem}
+   163→.faq details{border-bottom:1px solid var(--border)}
+   164→.faq summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:18px 0;font-weight:600;min-height:44px}
+   165→.faq summary::-webkit-details-marker{display:none}
+   166→.faq summary::after{content:'+';font-size:1.4rem;color:var(--accent);transition:transform .2s}
+   167→.faq details[open] summary::after{transform:rotate(45deg)}
+   168→.faq .fa{color:var(--inkSoft);padding-bottom:18px;max-width:62ch}
+   169→.ctaBand{background:var(--accent);color:var(--onAccent);border-radius:var(--radius);padding:40px 24px;text-align:center}
+   170→.ctaBand h2{margin-bottom:10px}
+   171→.ctaBand .btn{background:var(--onAccent);color:var(--accent)}
+   172→.aboutCols{display:grid;gap:18px}
+   173→.pull{font-family:var(--fh);font-size:clamp(1.2rem,2.4vw,1.6rem);line-height:1.35;border-left:3px solid var(--accent);padding-left:18px}
+   174→.contactCols{display:grid;gap:16px}
+   175→.cbox h3{margin-bottom:8px}
+   176→.cbox p,.cbox li{color:var(--inkSoft);font-size:.95rem}
+   177→.cbox ul{list-style:none;display:grid;gap:6px}
+   178→.cform{margin-top:34px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:26px;display:grid;gap:14px;max-width:640px}
+   179→.cform h3{margin:0}
+   180→.cform label{display:grid;gap:6px;font-size:.85rem;font-weight:600;color:var(--inkSoft)}
+   181→.cform input,.cform textarea{font-family:var(--fb);font-size:1rem;color:var(--ink);background:var(--bg);border:1px solid var(--border);border-radius:calc(var(--radius) * .6);padding:12px 14px;min-height:44px}
+   182→.cform textarea{resize:vertical}
+   183→.cform input:focus-visible,.cform textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+   184→.cform .frow{display:grid;gap:14px}
+   185→.cform small{color:var(--inkSoft);font-size:.8rem}
+   186→.skip{position:absolute;left:-9999px;top:0;z-index:100;background:var(--accent);color:var(--onAccent);padding:12px 18px;font-weight:700;border-radius:0 0 var(--radius) 0}
+   187→.skip:focus{left:0}
+   188→/* footer */
+   189→footer.site{border-top:1px solid var(--border);padding:40px 0 calc(28px + env(safe-area-inset-bottom));background:var(--bgAlt)}
+   190→.footCols{display:grid;grid-template-columns:1fr;gap:24px}
+   191→.footCols h4{font-size:.78rem;letter-spacing:.14em;text-transform:uppercase;color:var(--inkSoft);margin-bottom:10px}
+   192→.footCols ul{list-style:none;display:grid;gap:8px;font-size:.92rem}
+   193→.footCols a:hover{color:var(--accent)}
+   194→.mega-only{display:none}
+   195→.copy{margin-top:28px;padding-top:18px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;color:var(--inkSoft);font-size:.82rem}
+   196→.copy .stamp{font-variant-numeric:tabular-nums}
+   197→/* D1 extras */
+   198→.mbar{position:fixed;left:0;right:0;bottom:0;z-index:40;display:flex;gap:10px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(10px);border-top:1px solid var(--border)}
+   199→.mbar .btn{flex:1;min-height:48px}
+   200→body{padding-bottom:76px}
+   201→.hero{padding-block:calc(var(--spSec)*.8) var(--spSec)}
+   202→.heroWrap{display:grid;grid-template-columns:var(--heroCols);gap:26px;align-items:center}
+   203→.heroWrap .hcopy{display:flex;flex-direction:column;align-items:flex-start;gap:16px}
+   204→.heroWrap .hcopy p{max-width:52ch}
+   205→.heroWrap .hbtns{display:flex;flex-direction:column;gap:10px;width:100%}
+   206→.heroWrap .hbtns .btn{width:100%}
+   207→.hvisual{aspect-ratio:4/3;border-radius:var(--radius);position:relative;overflow:hidden}
+   208→.hvisual::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,transparent 55%,rgba(0,0,0,.18))}
+   209→.heroBadge{position:absolute;top:12px;left:12px;background:rgba(255,255,255,.92);color:#111;font-size:.7rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:6px 10px;border-radius:999px}
+   210→.reveal{opacity:0;transform:translateY(18px);transition:opacity .7s ease,transform .7s cubic-bezier(.2,.8,.2,1)}
+   211→.reveal.in{opacity:1;transform:none}
+   212→/* ============ D2 · tablet 641–1024 ============ */
+   213→@media (min-width:641px){
+   214→  :root{--gut:24px;--spSec:${sp * 0.8}px;--fx:1.1;--container:92%}
+   215→  .wrap{max-width:920px}
+   216→  .burger{display:none}
+   217→  .navLinks{display:flex}
+   218→  .navLinks li.hideD2{display:none}
+   219→  .navCta{display:inline-flex;min-height:44px}
+   220→  .gridFeat{grid-template-columns:repeat(2,1fr);gap:18px}
+   221→  .gridGal{grid-template-columns:repeat(3,1fr);gap:14px}
+   222→  .gridStats{grid-template-columns:repeat(4,1fr)}
+   223→  .menuList{grid-template-columns:1fr 1fr;column-gap:32px}
+   224→  .quotes{grid-template-columns:1fr 1fr}
+   225→  .footCols{grid-template-columns:repeat(2,1fr)}
+   226→  .heroWrap{justify-items:center;text-align:center}
+   227→  .heroWrap .hcopy{align-items:center}
+   228→  .heroWrap .hbtns{flex-direction:row;width:auto}
+   229→  .heroWrap .hbtns .btn{width:auto}
+   230→  .hvisual{width:72%}
+   231→  body{padding-bottom:0}
+   232→  .mbar{display:none}
+   233→}
+   234→/* ============ D3 · laptop 1025–1440 ============ */
+   235→@media (min-width:1025px){
+   236→  :root{--gut:32px;--spSec:${sp}px;--fx:1.2;--container:1080px}
+   237→  .navLinks li.hideD2{display:list-item}
+   238→  .gridFeat{grid-template-columns:repeat(3,1fr)}
+   239→  .gridGal{grid-template-columns:repeat(4,1fr)}
+   240→  .menuList{grid-template-columns:repeat(3,1fr)}
+   241→  .quotes{grid-template-columns:repeat(2,1fr)}
+   242→  .footCols{grid-template-columns:2fr 1fr 1fr 1fr}
+   243→  body[data-hero="split"] .heroWrap,body[data-hero="marquee"] .heroWrap,body[data-hero="diagonal"] .heroWrap{grid-template-columns:55fr 45fr;justify-items:start;text-align:left}
+   244→  body[data-hero="split"] .heroWrap .hcopy,body[data-hero="marquee"] .heroWrap .hcopy,body[data-hero="diagonal"] .heroWrap .hcopy{align-items:flex-start}
+   245→  body[data-hero="split"] .hvisual,body[data-hero="marquee"] .hvisual,body[data-hero="diagonal"] .hvisual{width:100%;aspect-ratio:1/1}
+   246→  body[data-hero="editorial"] .heroWrap{grid-template-columns:1fr;justify-items:start;text-align:left}
+   247→  .aboutCols{grid-template-columns:1.2fr .8fr}
+   248→  .contactCols{grid-template-columns:repeat(3,1fr)}
+   249→  .ctaBand{padding:56px 48px}
+   250→}
+   251→/* ============ D4 · desktop 1441–1920 ============ */
+   252→@media (min-width:1441px){
+   253→  :root{--gut:40px;--spSec:${sp * 1.15}px;--fx:1.35;--container:1320px}
+   254→  .gridFeat{grid-template-columns:repeat(4,1fr)}
+   255→  .mega-only{display:block}
+   256→  .footCols{grid-template-columns:2fr 1fr 1fr 1.4fr}
+   257→  .stats-unlock{display:grid!important}
+   258→  .stat{border-top-width:3px}
+   259→}
+   260→/* ============ D5 · ultra/TV ≥1921 ============ */
+   261→@media (min-width:1921px){
+   262→  :root{--gut:48px;--spSec:${sp * 1.4}px;--fx:1.5;--container:1560px}
+   263→  .gridFeat{grid-template-columns:repeat(5,1fr)}
+   264→  .navIn{justify-content:center;gap:56px}
+   265→  .navLinks{gap:34px}
+   266→  .navLinks a{letter-spacing:.06em;text-transform:uppercase;font-size:.8rem}
+   267→  body[data-hero] .heroWrap{grid-template-columns:1fr;justify-items:center;text-align:center;padding-block:40px}
+   268→  body[data-hero] .heroWrap .hcopy{align-items:center}
+   269→  body[data-hero] .hvisual{width:min(880px,72%);aspect-ratio:21/9}
+   270→  h1{font-size:clamp(3.6rem,4.5vw,5.2rem)}
+   271→  .ambient{opacity:1}
+   272→  .ctaBand{padding:88px 96px}
+   273→  .footCols{text-align:center}
+   274→  .footCols ul{justify-items:center}
+   275→}
+   276→.stats-unlock{display:none}${
+   277→    dk
+   278→      ? `
+   279→/* ============ OS dark mode — re-derived token set (MDN prefers-color-scheme;
+   280→   every token re-passes its own WCAG contrast check, see QA report) ============ */
+   281→@media (prefers-color-scheme:dark){
+   282→  :root{--bg:${dk.bg};--bgAlt:${dk.bgAlt};--surface:${dk.surface};--ink:${dk.ink};--inkSoft:${dk.inkSoft};--accent:${dk.accent};--accent2:${dk.accent2};--onAccent:${dk.inkOnAccent};--border:${dk.border};--navBg:${d.darkNav ? dk.ink : dk.bg};--navInk:${d.darkNav ? dk.bg : dk.ink};color-scheme:dark}
+   283→}`
+   284→      : ''
+   285→  }
+   286→`.replace(/\n/g, '\n');
+   287→}
+   288→
+   289→/* ---------- copy helpers ---------- */
+   290→function money(v: number): string {
+   291→  return v % 1 === 0 ? `$${v}` : `$${v.toFixed(2)}`;
+   292→}
+   293→
+   294→function brandSlug(brand: string): string {
+   295→  return brand.toLowerCase().replace(/[^a-z0-9]+/g, '') + '.site';
+   296→}
+   297→
+   298→/* ---------- render ---------- */
+   299→export function renderSite(seed: string, owner: string): RenderedSite {
+   300→  const { rng, niche, brand, city, design, palette } = designFromSeed(seed);
+   301→  const dk = palette.theme === 'dark' ? null : deriveDarkTokens(palette);
+   302→  const year = new Date().getFullYear();
+   303→  const email = `hello@${brandSlug(brand)}`;
+   304→  const phone = `+1 (${rng.int(200, 989)}) ${rng.int(200, 989)}-${rng.int(1000, 9999)}`;
+   305→
+   306→  // section order: hero first; pick 6 middles; cta before footer
+   307→  const pool = rng.shuffle(['about', 'services', 'gallery', 'menu', 'testimonials', 'stats', 'faq', 'contact']);
+   308→  const middles = pool.slice(0, 6);
+   309→  if (!middles.includes('contact')) middles[middles.length - 1] = 'contact';
+   310→  design.sectionOrder = ['hero', ...middles.slice(0, 5), 'cta'];
+   311→
+   312→  const navAnchors = design.sectionOrder
+   313→    .filter((s) => !['hero', 'cta'].includes(s))
+   314→    .map((s) => ({ id: s, label: s === 'services' ? 'Services' : s === 'gallery' ? 'Work' : s === 'menu' ? niche.menuTitle.split(' ')[0] : s === 'testimonials' ? 'Reviews' : s === 'stats' ? 'Numbers' : s === 'faq' ? 'FAQ' : s === 'about' ? 'About' : 'Visit' }));
+   315→
+   316→  const headline = rng.pick(niche.heroLines);
+   317→  const sub = `${rng.pick(niche.about)}, and we do it in ${city} — ${niche.label} for people who notice the details.`;
+   318→  const heroTag = rng.pick(['Since day one', 'By appointment', 'Walk-ins welcome', 'Est. ' + rng.int(1998, 2021)]);
+   319→
+   320→  // visual gradients for hero + tiles
+   321→  const grads = [
+   322→    `linear-gradient(135deg,${palette.accent},${palette.accent2})`,
+   323→    `linear-gradient(24deg,${palette.accent2},${palette.ink})`,
+   324→    `radial-gradient(circle at 30% 30%,${palette.accent},${palette.ink})`,
+   325→    `linear-gradient(160deg,${palette.accent} 10%,${palette.bgAlt} 90%)`,
+   326→  ];
+   327→
+   328→  const secHtml: Record<string, string> = {};
+   329→
+   330→  secHtml['hero'] = `
+   331→  <section class="hero" id="top"><div class="wrap heroWrap">
+   332→    <div class="hcopy reveal">
+   333→      <span class="kicker k${design.eyebrow === 'line' ? 'line' : design.eyebrow === 'bracket' ? 'brack' : ''}">${design.eyebrow === 'dot' ? '<span class="kd"></span>' : ''}${design.eyebrow === 'number' ? `<span class="knumber">01</span>` : ''}${heroTag}</span>
+   334→      <h1>${headline}</h1>
+   335→      <p class="lead">${sub}</p>
+   336→      <div class="hbtns">
+   337→        <a class="btn btnFill" href="#contact">${rng.pick(['Book a visit', 'Get started', 'Say hello', 'Reserve yours'])}</a>
+   338→        <a class="btn btnGhost" href="#${navAnchors[0]?.id ?? 'about'}">See the ${niche.label.split(' ')[0]}</a>
+   339→      </div>
+   340→    </div>
+   341→    <div class="hvisual reveal" style="background:${grads[0]}">
+   342→      <span class="heroBadge">${brand}</span>
+   343→    </div>
+   344→  </div></section>`;
+   345→
+   346→  secHtml['about'] = `
+   347→  <section id="about"><div class="wrap">
+   348→    <div class="secHead reveal"><span class="kicker">${design.eyebrow === 'dot' ? '<span class="kd"></span>' : ''}The idea</span><h2>${rng.pick(['Why we exist', 'The slow way, on purpose', 'What we believe'])}</h2></div>
+   349→    <div class="aboutCols">
+   350→      <p class="lead">${rng.pick(niche.about)}. ${rng.pick(['Nothing here is accidental.', 'Every detail is a decision.', 'We would rather do less, better.'])} ${rng.pick(['That is the whole philosophy.', 'It takes the time it takes.', 'You can feel the difference in a week.'])}</p>
+   351→      <div class="pull reveal">“${rng.pick(['Quality is just patience, priced honestly.', 'Craft is a schedule you keep.', 'Details are the design.'])}”</div>
+   352→    </div>
+   353→  </div></section>`;
+   354→
+   355→  secHtml['services'] = `
+   356→  <section id="services"><div class="wrap">
+   357→    <div class="secHead reveal"><span class="kicker">${design.eyebrow === 'dot' ? '<span class="kd"></span>' : ''}What we do</span><h2>Six ways in</h2></div>
+   358→    <div class="gridFeat">${niche.services.map((s, i) => `
+   359→      <article class="card reveal"><div class="cnum">${String(i + 1).padStart(2, '0')}</div><h3>${s}</h3><p>${rng.pick(['Booked week by week.', 'Talk to us about timing.', 'The house favourite.', 'Small groups, big attention.', 'Ask us anything first.', 'Built around your schedule.'])}</p></article>`).join('')}
+   360→    </div>
+   361→  </div></section>`;
+   362→
+   363→  secHtml['gallery'] = `
+   364→  <section id="gallery"><div class="wrap">
+   365→    <div class="secHead reveal"><span class="kicker">${design.eyebrow === 'dot' ? '<span class="kd"></span>' : ''}Recent work</span><h2>Fresh from the bench</h2></div>
+   366→    <div class="gridGal">${niche.services.slice(0, 4).map((s, i) => `
+   367→      <figure class="tile reveal" style="background:${grads[i % grads.length]}"><span>${s}</span></figure>`).join('')}
+   368→    </div>
+   369→  </div></section>`;
+   370→
+   371→  const menuItems = niche.services.slice(0, 6).map((s) => {
+   372→    const price = niche.priceBase * (1 + rng.float(0, 2.4));
+   373→    return `<div class="menuRow"><div><b>${s}</b><small>${rng.pick(['Made to order', 'House standard', 'Seasonal', 'Most requested', 'Limited daily run'])}</small></div><i>${money(Math.round(price * 100) / 100)}</i></div>`;
+   374→  }).join('');
+   375→  secHtml['menu'] = `
+   376→  <section id="menu"><div class="wrap">
+   377→    <div class="secHead reveal"><span class="kicker">${design.eyebrow === 'dot' ? '<span class="kd"></span>' : ''}Priced plainly</span><h2>${niche.menuTitle}</h2></div>
+   378→    <div class="menuList reveal">${menuItems}</div>
+   379→  </div></section>`;
+   380→
+   381→  const stats = niche.statLabels.map((l, i) => {
+   382→    const vals = [rng.int(4, 40), rng.int(60, 900), rng.int(3, 18), rng.int(1998, 2021)];
+   383→    return `<div class="stat"><b>${vals[i]}${i === 1 ? '+' : ''}</b><span>${l}</span></div>`;
+   384→  }).join('');
+   385→  secHtml['stats'] = `
+   386→  <section id="stats"><div class="wrap">
+   387→    <div class="secHead reveal"><span class="kicker">${design.eyebrow === 'dot' ? '<span class="kd"></span>' : ''}Numbers, kept honest</span><h2>The scoreboard</h2></div>
+   388→    <div class="gridStats reveal">${stats}</div>
+   389→  </div></section>`;
+   390→
+   391→  secHtml['testimonials'] = `
+   392→  <section id="testimonials"><div class="wrap">
+   393→    <div class="secHead reveal"><span class="kicker">${design.eyebrow === 'dot' ? '<span class="kd"></span>' : ''}Word of mouth</span><h2>What people say</h2></div>
+   394→    <div class="quotes">
+   395→      <blockquote class="quote reveal"><p>“${niche.quotes[0]}”</p><footer>— ${rng.pick(['Maren', 'Diego', 'Priya', 'Tomás', 'Ada', 'Jonas'])}, ${city}</footer></blockquote>
+   396→      <blockquote class="quote reveal"><p>“${niche.quotes[1]}”</p><footer>— ${rng.pick(['Sofia', 'Kwame', 'Elin', 'Marco', 'Yuki', 'Ruth'])}, regular since ${rng.int(2019, 2025)}</footer></blockquote>
+   397→    </div>
+   398→  </div></section>`;
+   399→
+   400→  const genericFaqs = [
+   401→    { q: 'Where are you?', a: `${rng.pick(['Right by', 'Two doors from', 'Behind the arches of'])} ${niche.place} in ${city} — knock during opening hours.` },
+   402→    { q: 'How do I reach you fastest?', a: `Email ${email} or call ${phone}. We answer within one working day.` },
+   403→    { q: 'Do you do gift options?', a: rng.pick(['Yes — ask at the counter and we will wrap it properly.', 'Absolutely, with a handwritten note at no charge.']) },
+   404→  ];
+   405→  secHtml['faq'] = `
+   406→  <section id="faq"><div class="wrap faq">
+   407→    <div class="secHead reveal"><span class="kicker">${design.eyebrow === 'dot' ? '<span class="kd"></span>' : ''}Asked often</span><h2>Good questions</h2></div>
+   408→    ${[...niche.faq, ...genericFaqs].slice(0, 5).map((f) => `<details><summary>${f.q}</summary><p class="fa">${f.a}</p></details>`).join('')}
+   409→  </div></section>`;
+   410→
+   411→  // one address everywhere (Repetition: the same facts repeat, never drift)
+   412→  const streetNo = rng.int(2, 148);
+   413→  // structured hours: display strings for humans, spec for JSON-LD (Google format)
+   414→  const hours = rng.pick([
+   415→    { display: ['Mon–Fri 8–18', 'Sat 9–16', 'Sun closed'], spec: [
+   416→      { d: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], o: '08:00', c: '18:00' },
+   417→      { d: ['Saturday'], o: '09:00', c: '16:00' }] },
+   418→    { display: ['Tue–Sat 10–20', 'Sun 11–15', 'Mon closed'], spec: [
+   419→      { d: ['Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'], o: '10:00', c: '20:00' },
+   420→      { d: ['Sunday'], o: '11:00', c: '15:00' }] },
+   421→    { display: ['Mon–Sat 9–19', 'Sun 10–14'], spec: [
+   422→      { d: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'], o: '09:00', c: '19:00' },
+   423→      { d: ['Sunday'], o: '10:00', c: '14:00' }] },
+   424→  ]);
+   425→  secHtml['contact'] = `
+   426→  <section id="contact"><div class="wrap">
+   427→    <div class="secHead reveal"><span class="kicker">${design.eyebrow === 'dot' ? '<span class="kd"></span>' : ''}Visit</span><h2>Find us in ${city}</h2></div>
+   428→    <div class="contactCols">
+   429→      <div class="cbox reveal"><h3>Address</h3><p>${streetNo} ${niche.place}<br/>${city}</p></div>
+   430→      <div class="cbox reveal"><h3>Hours</h3><ul>${hours.display.map((h) => `<li>${h}</li>`).join('')}</ul></div>
+   431→      <div class="cbox reveal"><h3>Contact</h3><ul><li><a href="mailto:${email}">${email}</a></li><li>${phone}</li></ul></div>
+   432→    </div>
+   433→    <form class="cform reveal" onsubmit="event.preventDefault();var f=this.elements;location.href='mailto:${email}?subject='+encodeURIComponent('Enquiry from '+f.name.value)+'&body='+encodeURIComponent(f.body.value+'\\n\\n— '+f.name.value+' ('+f.from.value+')')">
+   434→      <h3>Send a note</h3>
+   435→      <div class="frow">
+   436→        <label>Name<input required name="name" type="text" autocomplete="name" placeholder="Your name"/></label>
+   437→        <label>Email<input required name="from" type="email" autocomplete="email" placeholder="you@example.com"/></label>
+   438→      </div>
+   439→      <label>Message<textarea required name="body" rows="4" placeholder="Tell us what you need"></textarea></label>
+   440→      <button class="btn btnFill" type="submit">Send message</button>
+   441→      <small>No servers here — this opens your mail app with everything filled in.</small>
+   442→    </form>
+   443→  </div></section>`;
+   444→
+   445→  secHtml['cta'] = `
+   446→  <section id="cta"><div class="wrap"><div class="ctaBand reveal">
+   447→    <h2>${rng.pick(['Ready when you are.', 'Come see for yourself.', 'One message starts it.'])}</h2>
+   448→    <p style="opacity:.85;margin-bottom:20px">${rng.pick(['No pressure, no scripts.', 'Tell us what you need.', 'We reply within a day.'])}</p>
+   449→    <a class="btn" href="#contact">${rng.pick(['Book now', 'Start the conversation', 'Claim your spot'])}</a>
+   450→  </div></div></section>`;
+   451→
+   452→  const fontsUrl = `https://fonts.googleapis.com/css2?family=${design.fontHead.replace(/ /g, '+')}:wght@400;600;700;800&family=${design.fontBody.replace(/ /g, '+')}:wght@400;500;700&display=swap`;
+   453→
+   454→  /* ---------- SEO & social pack (no domain known → buyer swaps one placeholder) ---------- */
+   455→  const initial = (brand.replace(/^The /i, '').trim().charAt(0) || 'B').toUpperCase();
+   456→  const favSvg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='${palette.accent}'/><text x='32' y='43' font-family='Arial,sans-serif' font-size='34' font-weight='800' text-anchor='middle' fill='${palette.inkOnAccent}'>${initial}</text></svg>`;
+   457→  const favicon = `data:image/svg+xml,${encodeURIComponent(favSvg)}`;
+   458→  const SCHEMA_TYPE: Record<string, string> = {
+   459→    coffee: 'CafeOrCoffeeShop', bakery: 'Bakery', jazz: 'BarOrPub', books: 'BookStore',
+   460→    florist: 'Florist', tattoo: 'TattooParlor', plants: 'GardenStore', yoga: 'ExerciseGym',
+   461→    architecture: 'ProfessionalService', agency: 'ProfessionalService', surf: 'SportsActivityLocation', ceramics: 'LocalBusiness',
+   462→  };
+   463→  const jsonLd = JSON.stringify({
+   464→    '@context': 'https://schema.org',
+   465→    '@type': SCHEMA_TYPE[niche.key] ?? 'LocalBusiness',
+   466→    name: brand,
+   467→    description: `${headline} ${brand} — ${niche.label} in ${city}.`,
+   468→    email,
+   469→    telephone: phone,
+   470→    priceRange: `$${niche.priceBase}–$${niche.priceBase * 8}`,
+   471→    address: { '@type': 'PostalAddress', streetAddress: `${streetNo} ${niche.place}`, addressLocality: city, addressCountry: 'US' },
+   472→    openingHoursSpecification: hours.spec.map((s) => ({ '@type': 'OpeningHoursSpecification', dayOfWeek: s.d, opens: s.o, closes: s.c })),
+   473→  });
+   474→  const navLinksHtml = navAnchors.map((a, i) => `<li class="${i > 2 ? 'hideD2' : ''}"><a href="#${a.id}">${a.label}</a></li>`).join('');
+   475→  const drawerLinks = navAnchors.map((a) => `<a class="dl" href="#${a.id}">${a.label}</a>`).join('');
+   476→
+   477→  const html = `<!DOCTYPE html>
+   478→<html lang="en" data-hero="${design.heroVariant}">
+   479→<head>
+   480→<meta charset="UTF-8"/>
+   481→<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+   482→<title>${brand} — ${niche.label} in ${city}</title>
+   483→<meta name="generator" content="Beast Web Developer 2.0"/>
+   484→<meta name="description" content="${headline} ${brand}, a ${niche.label} in ${city}. ${sub}"/>
+   485→<meta name="theme-color" content="${palette.bg}" media="(prefers-color-scheme: light)"/>${dk ? `<meta name="theme-color" content="${dk.tokens.bg}" media="(prefers-color-scheme: dark)"/>` : ''}
+   486→<meta name="color-scheme" content="${palette.theme === 'dark' ? 'dark' : 'light dark'}"/>
+   487→<link rel="icon" href="${favicon}"/>
+   488→<meta property="og:type" content="website"/>
+   489→<meta property="og:site_name" content="${brand}"/>
+   490→<meta property="og:title" content="${brand} — ${niche.label} in ${city}"/>
+   491→<meta property="og:description" content="${headline}"/>
+   492→<meta property="og:locale" content="en_US"/>
+   493→<meta name="twitter:card" content="summary"/>
+   494→<meta name="twitter:title" content="${brand} — ${niche.label} in ${city}"/>
+   495→<meta name="twitter:description" content="${headline}"/>
+   496→<script type="application/ld+json">${jsonLd}</script>
+   497→<link rel="preconnect" href="https://fonts.googleapis.com"/>
+   498→<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+   499→<link href="${fontsUrl}" rel="stylesheet"/>
+   500→<style>${buildCss(palette, design, niche, dk?.tokens)}</style>
+   501→</head>
+   502→<body data-hero="${design.heroVariant}" data-motif="${design.motif}">
+   503→<a class="skip" href="#main">Skip to content</a>
+   504→<div class="ambient" aria-hidden="true"></div>
+   505→<header class="nav"><div class="wrap navIn">
+   506→  <a class="logo" href="#top"><span class="logoDot"></span>${brand}</a>
+   507→  <ul class="navLinks">${navLinksHtml}</ul>
+   508→  <a class="btn btnFill navCta" href="#contact" style="min-height:44px">${rng.pick(['Book', 'Enquire', 'Visit'])}</a>
+   509→  <button class="burger" aria-label="Open menu" aria-expanded="false" onclick="document.getElementById('drawer').classList.add('open');this.setAttribute('aria-expanded','true')"><span></span><span></span><span></span></button>
+   510→</div></header>
+   511→<nav class="drawer" id="drawer" aria-label="Mobile menu">
+   512→  <div class="drawerTop"><span class="logo"><span class="logoDot"></span>${brand}</span>
+   513→  <button class="burger" style="display:inline-flex" aria-label="Close menu" onclick="document.getElementById('drawer').classList.remove('open');document.querySelectorAll('.burger')[0].setAttribute('aria-expanded','false')"><span style="transform:rotate(45deg) translateY(5px)"></span><span style="opacity:0"></span><span style="transform:rotate(-45deg) translateY(-5px)"></span></button></div>
+   514→  ${drawerLinks}
+   515→  <a class="btn btnFill" href="#contact" onclick="document.getElementById('drawer').classList.remove('open')">Book a visit</a>
+   516→</nav>
+   517→<main id="main">
+   518→${design.sectionOrder.map((s) => secHtml[s]).join('\n')}
+   519→</main>
+   520→<footer class="site"><div class="wrap">
+   521→  <div class="footCols">
+   522→    <div><a class="logo" href="#top" style="color:var(--ink)"><span class="logoDot"></span>${brand}</a>
+   523→      <p style="color:var(--inkSoft);font-size:.92rem;margin-top:10px;max-width:34ch">${headline} ${brand} — ${niche.label} in ${city}, since ${rng.int(1998, 2021)}.</p>
+   524→      <div class="mega-only" style="margin-top:16px"><h4>First to know</h4><p style="color:var(--inkSoft);font-size:.9rem">Seasonal notes, once a month. No noise.</p>
+   525→      <form style="display:flex;gap:8px;margin-top:10px" onsubmit="event.preventDefault();this.innerHTML='<small>Thank you — you are on the list.</small>'">
+   526→        <input type="email" required placeholder="you@example.com" style="flex:1;min-height:44px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--btnR);background:var(--surface);color:var(--ink);font-family:var(--fb)"/>
+   527→        <button class="btn btnFill" style="min-height:44px">Join</button></form></div></div>
+   528→    <div><h4>Explore</h4><ul>${navAnchors.map((a) => `<li><a href="#${a.id}">${a.label}</a></li>`).join('')}</ul></div>
+   529→    <div><h4>Visit</h4><ul><li>${streetNo} ${niche.place}</li><li>${city}</li><li><a href="mailto:${email}">${email}</a></li><li>${phone}</li></ul></div>
+   530→    <div><h4>Legal</h4><ul><li><a href="#top">Privacy</a></li><li><a href="#top">Terms</a></li><li><a href="#top">Accessibility</a></li></ul></div>
+   531→  </div>
+   532→  <div class="copy">
+   533→    <span>© <span class="stamp">${year}</span> ${owner}. All rights reserved.</span>
+   534→    <span class="stamp">Grown by Beast Web Developer · seed ${seed.slice(0, 8)} · ${palette.name} / ${design.heroVariant} hero</span>
+   535→  </div>
+   536→</div></footer>
+   537→<div class="mbar"><a class="btn btnFill" href="tel:${phone.replace(/[^+\d]/g, '')}">Call</a><a class="btn btnGhost" href="#contact" style="background:var(--bg)">Book</a></div>
+   538→<script>
+   539→  var y=document.querySelectorAll('.stamp');for(var i=0;i<y.length;i++){if(y[i].textContent.length===4)y[i].textContent=new Date().getFullYear()}
+   540→  ${design.reveal ? `var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}})},{threshold:.12});
+   541→  document.querySelectorAll('.reveal').forEach(function(el){io.observe(el)});` : `document.querySelectorAll('.reveal').forEach(function(el){el.classList.add('in')});`}
+   542→</script>
+   543→</body>
+   544→</html>`;
+   545→
+   546→  return { brand, niche, city, design, palette, html, email, phone, darkReport: dk?.report };
+   547→}
+   548→
+   549→/* ---------- support pack ----------
+   550→   Research-based launch essentials for a sellable static site:
+   551→   sitemap.xml + robots.txt (technical SEO), 404.html (dead-link safety),
+   552→   DESIGN-NOTES.md (human-grade provenance — the "months of work" paper trail).
+   553→   All derived deterministically from the seed. */
+   554→export function renderSupportFiles(
+   555→  seed: string,
+   556→  owner: string,
+   557→  meta?: { price?: number; copyright?: string }
+   558→): { 'sitemap.xml': string; 'robots.txt': string; '404.html': string; 'DESIGN-NOTES.md': string } {
+   559→  const { niche, brand, city, design, palette } = designFromSeed(seed);
+   560→  const dk = palette.theme === 'dark' ? null : deriveDarkTokens(palette);
+   561→  const year = new Date().getFullYear();
+   562→  const domain = brandSlug(brand);
+   563→  const copyright = meta?.copyright || `© ${year} ${owner}. All rights reserved.`;
+   564→
+   565→  const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
+   566→<!-- Buyer: replace example.com with your real domain after deployment. -->
+   567→<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+   568→  <url>
+   569→    <loc>https://${domain}/</loc>
+   570→    <lastmod>${new Date().toISOString().slice(0, 10)}</lastmod>
+   571→    <changefreq>monthly</changefreq>
+   572→    <priority>1.0</priority>
+   573→  </url>
+   574→</urlset>
+   575→`;
+   576→
+   577→  const robots = `# robots.txt — ${brand}
+   578→User-agent: *
+   579→Allow: /
+   580→
+   581→Sitemap: https://${domain}/sitemap.xml
+   582→`;
+   583→
+   584→  const notFound = `<!DOCTYPE html>
+   585→<html lang="en">
+   586→<head>
+   587→<meta charset="UTF-8"/>
+   588→<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+   589→<title>Page not found — ${brand}</title>
+   590→<meta name="robots" content="noindex"/>
+   591→<meta name="theme-color" content="${palette.bg}"/>
+   592→<style>
+   593→:root{--bg:${palette.bg};--ink:${palette.ink};--inkSoft:${palette.inkSoft};--accent:${palette.accent};--fh:'${design.fontHead}',serif;--fb:'${design.fontBody}',sans-serif;color-scheme:${palette.theme === 'dark' ? 'dark' : 'light'}}${dk ? `
+   594→@media (prefers-color-scheme:dark){:root{--bg:${dk.tokens.bg};--ink:${dk.tokens.ink};--inkSoft:${dk.tokens.inkSoft};--accent:${dk.tokens.accent};color-scheme:dark}}` : ''}
+   595→*{margin:0;padding:0;box-sizing:border-box}
+   596→body{background:var(--bg);color:var(--ink);font-family:var(--fb);min-height:100vh;display:grid;place-items:center;text-align:center;padding:24px}
+   597→h1{font-family:var(--fh);font-size:clamp(2.2rem,8vw,4rem);line-height:1.05}
+   598→p{color:var(--inkSoft);margin:14px 0 26px;max-width:44ch}
+   599→a{display:inline-block;background:var(--accent);color:var(--bg);font-weight:700;padding:14px 28px;border-radius:999px;text-decoration:none;min-height:48px;line-height:20px}
+   600→</style>
+   601→</head>
+   602→<body>
+   603→<main>
+   604→  <h1>Wrong turn.</h1>
+   605→  <p>This page does not exist — but ${brand} in ${city} is exactly where you left it.</p>
+   606→  <a href="/">Back to ${brand}</a>
+   607→  <p style="margin-top:34px;font-size:.8rem">${copyright}</p>
+   608→</main>
+   609→</body>
+   610→</html>
+   611→`;
+   612→
+   613→  const contrastRows = palette.report
+   614→    .map((r) => `| ${r.pair} | ${r.ratio}:1 | ${r.target}:1 | ${r.pass ? 'PASS' : 'flagged'} |`)
+   615→    .join('\n');
+   616→  const darkRows = (dk?.report ?? [])
+   617→    .map((r) => `| ${r.pair} | ${r.ratio}:1 | ${r.target}:1 | ${r.pass ? 'PASS' : 'flagged'} |`)
+   618→    .join('\n');
+   619→  const notes = `# Design notes — ${brand}
+   620→
+   621→> ${brand} — ${niche.label} in ${city}.
+   622→> Every decision below was made deliberately, in stage order, and is
+   623→> reproducible from the seed. This file is the paper trail a human
+   624→> designer would hand you with the invoice.
+   625→
+   626→**Commission:** ${copyright}
+   627→**Design seed:** \`${seed}\` (same seed → identical site, forever)
+   628→**Shelf price:** ${meta?.price ? `$${meta.price}` : 'set at stamp time'}
+   629→
+   630→## 1 · Colour system
+   631→Palette **${palette.name}** — ${palette.harmony} harmony, ${palette.theme} theme.
+   632→Not sampled by vibe: generated by harmony math, then contrast-corrected per role until it cleared WCAG.
+   633→
+   634→| pair | measured | target | verdict |
+   635→| --- | --- | --- | --- |
+   636→${contrastRows}
+   637→${dk ? `
+   638→### Dark mode (prefers-color-scheme)
+   639→The dark theme is a re-derived token set — every token re-passes its own contrast check:
+   640→
+   641→| pair | measured | target | verdict |
+   642→| --- | --- | --- | --- |
+   643→${darkRows}
+   644→` : ''}
+   645→## 2 · Typography
+   646→Display: **${design.fontHead}** · Body: **${design.fontBody}** (Google Fonts, free licence).
+   647→Fluid scale via clamp() — no breakpoint jumps, no fixed px headings.
+   648→
+   649→## 3 · Structure
+   650→Hero variant: **${design.heroVariant}** · nav: **${design.navVariant}** · motif: **${design.motif}** ·
+   651→spacing rhythm: **${design.spaceRhythm}** · eyebrow: **${design.eyebrow}** · case: **${design.displayCase}**.
+   652→Section order: ${design.sectionOrder.join(' → ')}.
+   653→
+   654→## 4 · The five device classes (one site, five relative layouts)
+   655→${DEVICE_CLASSES.map((d) => `- **${d.id} ${d.name} (${d.range})** — nav: ${d.nav}; hero: ${d.hero}; features ${d.featureCols}-col; footer: ${d.footer}.`).join('\n')}
+   656→These are structural re-arrangements, not zoom levels. Built from relative units only
+   657→(%, fr, clamp(), rem, aspect-ratio).
+   658→
+   659→## 5 · C.R.A.P. audit (Robin Williams)
+   660→- **Contrast** — every ink/background pair measured against WCAG targets (table above).
+   661→- **Repetition** — one spacing scale, one type scale, tokenised colour roles, reused everywhere.
+   662→- **Alignment** — all content sits on the container grid of its device class; nothing nudged by eye.
+   663→- **Proximity** — related blocks grouped, section rhythm a fixed multiple of the spacing scale.
+   664→
+   665→## 6 · Research base
+   666→NN/g eyetracking & reading patterns (F/Z/layer-cake/spotted) · Material Design responsive
+   667→layout grid · MDN grid layout recipes · Setproduct bento math · Müller-Brockmann grid
+   668→systems · Robin Williams C.R.A.P. · WCAG 2.1 contrast maths · MDN prefers-color-scheme.
+   669→
+   670→## 7 · Launch checklist (for the buyer)
+   671→1. Replace \`${domain}\` in sitemap.xml and robots.txt with your real domain.
+   672→2. Upload the whole folder (index.html, 404.html, sitemap.xml, robots.txt) to any static host.
+   673→3. Submit the sitemap in Google Search Console.
+   674→4. The contact form opens the visitor's mail app — no backend, no servers, nothing to maintain.
+   675→
+   676→${copyright}
+   677→`;
+   678→
+   679→  return { 'sitemap.xml': sitemap, 'robots.txt': robots, '404.html': notFound, 'DESIGN-NOTES.md': notes };
+   680→}
+   681→
+   682→export { DEVICE_CLASSES };
+   683→

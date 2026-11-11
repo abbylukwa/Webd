@@ -1,6 +1,6 @@
 {
- "day": 10,
- "lastRealTick": "2026-11-10",
+ "day": 12,
+ "lastRealTick": "2026-11-11",
  "owner": "Beast Studio",
  "sites": [
   {
@@ -318,7 +318,7 @@
    "brand": "VelvetQuill",
    "nicheLabel": "bookbindery",
    "city": "Vesterby",
-   "stageIndex": 2,
+   "stageIndex": 4,
    "status": "in-studio",
    "price": 0,
    "startedDay": 8,
@@ -334,6 +334,14 @@
     {
      "day": 10,
      "entry": "VelvetQuill: palette “Dusk Rally” locked (triadic, WCAG-corrected)"
+    },
+    {
+     "day": 11,
+     "entry": "VelvetQuill: wireframed across D1–D5 (5 relative layouts) — pattern “Gallerywall”, Layer-cake-reading"
+    },
+    {
+     "day": 12,
+     "entry": "VelvetQuill: built — semantic HTML, 7 sections, 5 structural breakpoints, sitemap+robots+404 packed"
     }
    ],
    "design": {
@@ -343,7 +351,7 @@
     "fontHead": "Space Grotesk",
     "fontBody": "Outfit",
     "spaceRhythm": "generous",
-    "sectionCount": 0
+    "sectionCount": 7
    },
    "palette": {
     "name": "Dusk Rally",
@@ -365,7 +373,7 @@
    "brand": "NorthHearth",
    "nicheLabel": "neighbourhood bakery",
    "city": "Kirkwall",
-   "stageIndex": 2,
+   "stageIndex": 4,
    "status": "in-studio",
    "price": 0,
    "startedDay": 8,
@@ -381,6 +389,14 @@
     {
      "day": 10,
      "entry": "NorthHearth: palette “Ember Dusk” locked (tetradic, WCAG-corrected)"
+    },
+    {
+     "day": 11,
+     "entry": "NorthHearth: wireframed across D1–D5 (5 relative layouts) — pattern “Studio”, F-reading"
+    },
+    {
+     "day": 12,
+     "entry": "NorthHearth: built — semantic HTML, 7 sections, 5 structural breakpoints, sitemap+robots+404 packed"
     }
    ],
    "design": {
@@ -390,7 +406,7 @@
     "fontHead": "Bricolage Grotesque",
     "fontBody": "Source Sans 3",
     "spaceRhythm": "compact",
-    "sectionCount": 0
+    "sectionCount": 7
    },
    "palette": {
     "name": "Ember Dusk",
@@ -412,7 +428,7 @@
    "brand": "EmberBean",
    "nicheLabel": "coffee roastery",
    "city": "Marrow Bay",
-   "stageIndex": 2,
+   "stageIndex": 4,
    "status": "in-studio",
    "price": 0,
    "startedDay": 8,
@@ -428,6 +444,14 @@
     {
      "day": 10,
      "entry": "EmberBean: palette “Dusk Rally” locked (analogous, WCAG-corrected)"
+    },
+    {
+     "day": 11,
+     "entry": "EmberBean: wireframed across D1–D5 (5 relative layouts) — pattern “Splitline”, Z-reading"
+    },
+    {
+     "day": 12,
+     "entry": "EmberBean: built — semantic HTML, 7 sections, 5 structural breakpoints, sitemap+robots+404 packed"
     }
    ],
    "design": {
@@ -437,7 +461,7 @@
     "fontHead": "Bricolage Grotesque",
     "fontBody": "Work Sans",
     "spaceRhythm": "cozy",
-    "sectionCount": 0
+    "sectionCount": 7
    },
    "palette": {
     "name": "Dusk Rally",
@@ -455,6 +479,24 @@
   }
  ],
  "log": [
+  {
+   "day": 12,
+   "date": "sim-day-12",
+   "jobs": [
+    "VelvetQuill: built — semantic HTML, 7 sections, 5 structural breakpoints, sitemap+robots+404 packed",
+    "NorthHearth: built — semantic HTML, 7 sections, 5 structural breakpoints, sitemap+robots+404 packed",
+    "EmberBean: built — semantic HTML, 7 sections, 5 structural breakpoints, sitemap+robots+404 packed"
+   ]
+  },
+  {
+   "day": 11,
+   "date": "2026-11-11",
+   "jobs": [
+    "VelvetQuill: wireframed across D1–D5 (5 relative layouts) — pattern “Gallerywall”, Layer-cake-reading",
+    "NorthHearth: wireframed across D1–D5 (5 relative layouts) — pattern “Studio”, F-reading",
+    "EmberBean: wireframed across D1–D5 (5 relative layouts) — pattern “Splitline”, Z-reading"
+   ]
+  },
   {
    "day": 10,
    "date": "sim-day-10",

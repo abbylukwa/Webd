@@ -1,0 +1,5 @@
+# robots.txt — VelvetQuill
+User-agent: *
+Allow: /
+
+Sitemap: https://velvetquill.site/sitemap.xml

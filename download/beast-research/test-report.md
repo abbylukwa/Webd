@@ -1,8 +1,16 @@
 # Feature-by-feature test report — THE BEAST v2.0 (final)
 
+> Re-verification 2026-11-11: the `/api/beast/test` route (Test Center backend)
+> was found missing and rebuilt; suite re-run through all three runners —
+> CLI 23/23 · HTTP 23/23 · in-app Test Center 23/23 (49ms) — plus live browser
+> checks: zero console errors, Force-work-day POST 200 (day 11→12), site ZIP
+> download 200 (32.7 KB, application/zip), D1 phone preview confirmed the
+> structural re-arrangement live (inline nav → drawer, split hero → poster stack).
+
 Runners:
 - CLI: `bun scripts/test-beast.ts` → **23/23 PASS**
 - HTTP: `GET /api/beast/test` on the production build → **23/23 PASS**
+- In-app: Test Center tab → **23/23 PASS**
 - Suite source: `src/lib/beast/selftest.ts` (engine tests run in a throwaway
   `BEAST_DATA_DIR` sandbox; live studio state is never touched)
 
