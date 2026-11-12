@@ -296,12 +296,14 @@ function brandSlug(brand: string): string {
 }
 
 /* ---------- render ---------- */
-export function renderSite(seed: string, owner: string): RenderedSite {
+export function renderSite(seed: string, owner: string, opts?: { art?: RenderArt }): RenderedSite {
   const { rng, niche, brand, city, design, palette } = designFromSeed(seed);
   const dk = palette.theme === 'dark' ? null : deriveDarkTokens(palette);
   const year = new Date().getFullYear();
-  const email = `hello@${brandSlug(brand)}`;
-  const phone = `+1 (${rng.int(200, 989)}) ${rng.int(200, 989)}-${rng.int(1000, 9999)}`;
+  const vals = opts?.art?.values;
+  const email = vals?.emails?.[0] ?? `hello@${brandSlug(brand)}`;
+  const phone = vals?.phones?.[0]?.number ?? `+1 (${rng.int(200, 989)}) ${rng.int(200, 989)}-${rng.int(1000, 9999)}`;
+  const extraPhones = (vals?.phones ?? []).slice(1, 12);
 
   // section order: hero first; pick 6 middles; cta before footer
   const pool = rng.shuffle(['about', 'services', 'gallery', 'menu', 'testimonials', 'stats', 'faq', 'contact']);
@@ -338,7 +340,7 @@ export function renderSite(seed: string, owner: string): RenderedSite {
         <a class="btn btnGhost" href="#${navAnchors[0]?.id ?? 'about'}">See the ${niche.label.split(' ')[0]}</a>
       </div>
     </div>
-    <div class="hvisual reveal" style="background:${grads[0]}">
+    <div class="hvisual reveal" style="${opts?.art ? imgFor('hero', opts.art, grads, 0) : `background:${grads[0]}`}">
       <span class="heroBadge">${brand}</span>
     </div>
   </div></section>`;
@@ -426,10 +428,12 @@ export function renderSite(seed: string, owner: string): RenderedSite {
   <section id="contact"><div class="wrap">
     <div class="secHead reveal"><span class="kicker">${design.eyebrow === 'dot' ? '<span class="kd"></span>' : ''}Visit</span><h2>Find us in ${city}</h2></div>
     <div class="contactCols">
-      <div class="cbox reveal"><h3>Address</h3><p>${streetNo} ${niche.place}<br/>${city}</p></div>
-      <div class="cbox reveal"><h3>Hours</h3><ul>${hours.display.map((h) => `<li>${h}</li>`).join('')}</ul></div>
-      <div class="cbox reveal"><h3>Contact</h3><ul><li><a href="mailto:${email}">${email}</a></li><li>${phone}</li></ul></div>
+      <div class="cbox reveal"><h3>Address</h3><p>${vals?.address ?? `${streetNo} ${niche.place}`}<br/>${city}</p></div>
+      <div class="cbox reveal"><h3>Hours</h3><ul>${(vals?.hoursDisplay ?? hours.display).map((h) => `<li>${h}</li>`).join('')}</ul></div>
+      <div class="cbox reveal"><h3>Contact</h3><ul><li><a href="mailto:${email}">${email}</a></li><li><a href="tel:${phone.replace(/[^+\d]/g, '')}">${phone}</a></li>${extraPhones.map((p) => `<li><a href="tel:${p.number.replace(/[^+\d]/g, '')}">${p.number}</a> <small style="color:var(--inkSoft)">· ${p.label}</small></li>`).join('')}</ul></div>
     </div>
+    ${vals ? `<div class="cbox reveal" style="margin-top:22px"><h3>Every channel</h3><ul class="socialList">${socialRow(vals)}</ul></div>
+    <div class="mapbox reveal" style="margin-top:22px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden"><iframe title="Map — ${brand}" src="${vals.mapEmbed}" style="width:100%;height:300px;border:0" loading="lazy"></iframe></div>` : ''}
     <form class="cform reveal" onsubmit="event.preventDefault();var f=this.elements;location.href='mailto:${email}?subject='+encodeURIComponent('Enquiry from '+f.name.value)+'&body='+encodeURIComponent(f.body.value+'\\n\\n— '+f.name.value+' ('+f.from.value+')')">
       <h3>Send a note</h3>
       <div class="frow">
@@ -468,7 +472,9 @@ export function renderSite(seed: string, owner: string): RenderedSite {
     email,
     telephone: phone,
     priceRange: `$${niche.priceBase}–$${niche.priceBase * 8}`,
-    address: { '@type': 'PostalAddress', streetAddress: `${streetNo} ${niche.place}`, addressLocality: city, addressCountry: 'US' },
+    address: { '@type': 'PostalAddress', streetAddress: vals?.address ?? `${streetNo} ${niche.place}`, addressLocality: city, addressCountry: 'US' },
+    contactPoint: vals ? JSON.parse(`[${vals.phones.slice(0, 12).map((p) => `{"@type":"ContactPoint","telephone":"${p.number}","contactType":"customer service","name":"${p.label}"}`).join(',')}]`) : undefined,
+    sameAs: vals?.socials?.map((s) => s.url),
     openingHoursSpecification: hours.spec.map((s) => ({ '@type': 'OpeningHoursSpecification', dayOfWeek: s.d, opens: s.o, closes: s.c })),
   });
   const navLinksHtml = navAnchors.map((a, i) => `<li class="${i > 2 ? 'hideD2' : ''}"><a href="#${a.id}">${a.label}</a></li>`).join('');
@@ -546,6 +552,248 @@ ${design.sectionOrder.map((s) => secHtml[s]).join('\n')}
   return { brand, niche, city, design, palette, html, email, phone, darkReport: dk?.report };
 }
 
+/* ---------- v3 · multi-page rendering ---------- */
+import type { SiteValues, Product } from './values';
+import type { ImageRecord } from './images';
+import { SOCIAL_PLATFORMS } from './values';
+
+export type PagePlanEntry = { key: string; title: string; purpose: string; file: string; inNav: boolean };
+
+export type RenderArt = {
+  brief?: { audience: string; tone: string; promise: string; cityStory?: string } | null;
+  headings?: Record<string, string[]>;
+  copy?: Record<string, { kicker: string; body: string }[]>;
+  images?: ImageRecord[];
+  catalog?: Product[];
+  values?: SiteValues;
+  pages?: PagePlanEntry[];
+};
+
+export type InnerPageOpts = {
+  art: RenderArt;
+  currentKey: string;
+  polish?: boolean; // v2 revision (motion/focus pass already in CSS; marks revision)
+};
+
+function imgFor(slotId: string, art: RenderArt, grads: string[], idx: number): string {
+  const rec = art.images?.find((r) => r.slotId === slotId && r.status !== 'gradient');
+  if (rec?.file) return `background:url('${rec.file}') center/cover;`;
+  if (rec?.remoteUrl) return `background:url('${rec.remoteUrl}') center/cover;`;
+  return `background:${grads[idx % grads.length]}`;
+}
+
+function socialRow(values: SiteValues): string {
+  return values.socials.map((s) => {
+    const label = SOCIAL_PLATFORMS.find((p) => p.key === s.platform)?.label ?? s.platform;
+    return `<li><a href="${s.url}" rel="noopener" target="_blank">${label}<span aria-hidden="true"> ↗</span></a></li>`;
+  }).join('');
+}
+
+function contactPoints(values: SiteValues): string {
+  return values.phones.slice(0, 12).map((p) => `{"@type":"ContactPoint","telephone":"${p.number}","contactType":"customer service","name":"${p.label}"}`).join(',');
+}
+
+/** Inner pages share the home CSS tokens, nav skeleton and footer (Repetition). */
+export function renderInnerPage(seed: string, owner: string, kind: string, opts: InnerPageOpts): string {
+  const { brand, niche, city, design, palette } = designFromSeed(seed);
+  const dk = palette.theme === 'dark' ? null : deriveDarkTokens(palette);
+  const year = new Date().getFullYear();
+  const art = opts.art;
+  const v: SiteValues = art.values ?? ({} as SiteValues);
+  const pages = art.pages ?? [];
+  const email = v.emails?.[0] ?? `hello@${brandSlug(brand)}`;
+  const primaryPhone = v.phones?.[0]?.number ?? '+1 (000) 000-0000';
+  const headings = art.headings?.[kind] ?? [];
+  const copy = art.copy?.[kind] ?? [];
+  const grads = [
+    `linear-gradient(135deg,${palette.accent},${palette.accent2})`,
+    `linear-gradient(24deg,${palette.accent2},${palette.ink})`,
+    `radial-gradient(circle at 30% 30%,${palette.accent},${palette.ink})`,
+    `linear-gradient(160deg,${palette.accent} 10%,${palette.bgAlt} 90%)`,
+  ];
+  const page = pages.find((p) => p.key === kind);
+  const h = (i: number, fallback: string) => headings[i] ?? fallback;
+  const c = (i: number) => copy[i]?.body ?? '';
+  const kicker = (i: number, fallback: string) => copy[i]?.kicker ?? fallback;
+
+  const navLinks = pages.filter((p) => p.inNav).map((p) =>
+    `<li class="${p.key === 'home' ? '' : ''}"><a href="${p.file}"${p.key === opts.currentKey ? ' aria-current="page"' : ''}>${p.title}</a></li>`
+  ).join('');
+  const drawerLinks = pages.filter((p) => p.inNav).map((p) => `<a class="dl" href="${p.file}">${p.title}</a>`).join('');
+
+  let main = '';
+  if (kind === 'about') {
+    main = `
+  <section><div class="wrap">
+    <div class="secHead reveal"><span class="kicker">${kicker(0, 'The idea')}</span><h2>${h(0, 'Why we exist')}</h2></div>
+    <div class="aboutCols">
+      <p class="lead">${art.brief?.promise ?? `${rng0(seed)} ${niche.about[0]}`}</p>
+      <div class="pull reveal">“${art.brief?.tone ?? 'Craft is a schedule you keep.'}”</div>
+    </div>
+    <p style="margin-top:22px;color:var(--inkSoft);max-width:62ch">${c(0) || `${niche.about[1] ?? ''} Everything is made in ${city}, for people who notice the details.`}</p>
+  </div></section>
+  <section id="stats"><div class="wrap"><div class="secHead reveal"><span class="kicker">Numbers, kept honest</span><h2>${h(1, 'The scoreboard')}</h2></div>
+    <div class="gridStats reveal">${niche.statLabels.map((l, i) => `<div class="stat"><b>${[rng0(seed), 3, 2, 1][i] ? '' : ''}${[12, 300, 6, 2016][i]}${i === 1 ? '+' : ''}</b><span>${l}</span></div>`).join('')}</div>
+  </div></section>`;
+  } else if (kind === 'services') {
+    main = `
+  <section><div class="wrap">
+    <div class="secHead reveal"><span class="kicker">${kicker(0, 'What we do')}</span><h2>${h(0, 'Six ways in')}</h2></div>
+    <div class="gridFeat">${niche.services.map((s, i) => `<article class="card reveal"><div class="cnum">${String(i + 1).padStart(2, '0')}</div><h3>${s}</h3><p>${c(0) || 'Booked week by week — talk to us about timing.'}</p></article>`).join('')}</div>
+  </div></section>`;
+  } else if (kind === 'products') {
+    const products = (art.catalog ?? v.products ?? []).slice(0, 30);
+    main = `
+  <section><div class="wrap">
+    <div class="secHead reveal"><span class="kicker">${kicker(0, 'Priced plainly')}</span><h2>${h(0, niche.menuTitle)}</h2></div>
+    <div class="gridFeat">${products.map((p, i) => `
+      <article class="card reveal"><div class="cnum">${String(i + 1).padStart(2, '0')}</div>
+        <div class="ptile" style="${imgFor(`product-${i + 1}`, art, grads, i)};aspect-ratio:4/3;border-radius:calc(var(--radius)*.7);margin-bottom:12px" role="img" aria-label="${p.name}"></div>
+        <h3>${p.name}</h3><p>${p.desc}</p><i style="color:var(--accent);font-weight:700;font-style:normal">${money(p.price)}</i>${p.tag ? ` <small style="color:var(--inkSoft)">— ${p.tag}</small>` : ''}
+      </article>`).join('')}</div>
+  </div></section>`;
+  } else if (kind === 'gallery') {
+    main = `
+  <section><div class="wrap">
+    <div class="secHead reveal"><span class="kicker">${kicker(0, 'Recent work')}</span><h2>${h(0, 'Fresh from the bench')}</h2></div>
+    <div class="gridGal">${niche.services.slice(0, 6).map((s, i) => `<figure class="tile reveal" style="${imgFor(`gallery-${i + 1}`, art, grads, i)}"><span>${s}</span></figure>`).join('')}</div>
+  </div></section>`;
+  } else if (kind === 'faq') {
+    const generic = [
+      { q: 'Where are you?', a: `${v.address ?? niche.place + ' in ' + city} — knock during opening hours.` },
+      { q: 'How do I reach you fastest?', a: `Call ${primaryPhone} or email ${email}. We answer within one working day.` },
+      { q: 'Do you do gift options?', a: 'Yes — ask at the counter and we will wrap it properly.' },
+    ];
+    main = `
+  <section><div class="wrap faq">
+    <div class="secHead reveal"><span class="kicker">${kicker(0, 'Asked often')}</span><h2>${h(0, 'Good questions')}</h2></div>
+    ${[...niche.faq, ...generic].slice(0, 6).map((f) => `<details><summary>${f.q}</summary><p class="fa">${f.a}</p></details>`).join('')}
+  </div></section>`;
+  } else if (kind === 'contact') {
+    const phones = (v.phones ?? []).slice(0, 12);
+    main = `
+  <section><div class="wrap">
+    <div class="secHead reveal"><span class="kicker">${kicker(0, 'Contact')}</span><h2>${h(0, `Talk to ${brand}`)}</h2></div>
+    <div class="contactCols">
+      <div class="cbox reveal"><h3>${h(1, 'Call — every desk has a number')}</h3><ul>${phones.map((p) => `<li><a href="tel:${p.number.replace(/[^+\d]/g, '')}">${p.number}</a> <small style="color:var(--inkSoft)">· ${p.label}</small></li>`).join('')}</ul></div>
+      <div class="cbox reveal"><h3>${h(2, 'Write — we answer within a day')}</h3><ul>${(v.emails ?? [email]).map((e) => `<li><a href="mailto:${e}">${e}</a></li>`).join('')}</ul></div>
+      <div class="cbox reveal"><h3>${h(3, 'Visit')}</h3><p>${v.address ?? `${niche.place}, ${city}`}</p><ul>${(v.hoursDisplay ?? []).map((x) => `<li>${x}</li>`).join('')}</ul></div>
+    </div>
+    <div class="cbox reveal" style="margin-top:22px"><h3>Every channel — a modern business is reachable</h3>
+      <ul class="socialList">${socialRow(v)}</ul></div>
+    <div class="mapbox reveal" style="margin-top:22px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+      <iframe title="Map — ${brand}" src="${v.mapEmbed ?? ''}" style="width:100%;height:300px;border:0" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+    </div>
+    <form class="cform reveal" onsubmit="event.preventDefault();var f=this.elements;location.href='mailto:${email}?subject='+encodeURIComponent('Enquiry from '+f.name.value)+'&body='+encodeURIComponent(f.body.value+'\\n\\n— '+f.name.value+' ('+f.from.value+')')">
+      <h3>Send a note</h3>
+      <div class="frow">
+        <label>Name<input required name="name" type="text" autocomplete="name" placeholder="Your name"/></label>
+        <label>Email<input required name="from" type="email" autocomplete="email" placeholder="you@example.com"/></label>
+      </div>
+      <label>Message<textarea required name="body" rows="4" placeholder="Tell us what you need"></textarea></label>
+      <button class="btn btnFill" type="submit">Send message</button>
+      <small>No servers here — this opens your mail app with everything filled in.</small>
+    </form>
+  </div></section>`;
+  } else if (kind === 'legal') {
+    main = `
+  <section><div class="wrap" style="max-width:72ch">
+    <div class="secHead reveal"><span class="kicker">${kicker(0, 'The small print, readable')}</span><h2>${h(0, 'Privacy, terms, accessibility')}</h2></div>
+    <p class="lead">${c(0) || `This site stores nothing about you. The contact form opens your own mail app — no cookies, no trackers, no analytics.`}</p>
+    <h3 style="margin-top:22px">${h(1, 'Accessibility')}</h3>
+    <p style="color:var(--inkSoft)">Built to WCAG 2.1 AA: every text pair passes its contrast target, focus is always visible, motion honours prefers-reduced-motion.</p>
+    <h3 style="margin-top:22px">${h(2, 'Terms')}</h3>
+    <p style="color:var(--inkSoft)">Content of ${brand}, ${year}. Questions: ${email}.</p>
+  </div></section>`;
+  } else if (kind === 'journal') {
+    main = `
+  <section><div class="wrap">
+    <div class="secHead reveal"><span class="kicker">${kicker(0, 'Notes from the bench')}</span><h2>${h(0, 'Journal')}</h2></div>
+    <div class="quotes">${niche.quotes.concat([`Season notes from ${city}, filed monthly.`]).slice(0, 3).map((q, i) => `<blockquote class="quote reveal"><p>“${q}”</p><footer>— ${brand}, entry ${i + 1}</footer></blockquote>`).join('')}</div>
+  </div></section>`;
+  }
+
+  const SCHEMA_TYPE: Record<string, string> = {
+    coffee: 'CafeOrCoffeeShop', bakery: 'Bakery', jazz: 'BarOrPub', books: 'BookStore',
+    florist: 'Florist', tattoo: 'TattooParlor', plants: 'GardenStore', yoga: 'ExerciseGym',
+    architecture: 'ProfessionalService', agency: 'ProfessionalService', surf: 'SportsActivityLocation', ceramics: 'LocalBusiness',
+  };
+  const jsonLd = JSON.stringify({
+    '@context': 'https://schema.org', '@type': SCHEMA_TYPE[niche.key] ?? 'LocalBusiness',
+    name: brand, description: `${brand} — ${page?.purpose ?? niche.label} in ${city}.`,
+    email, telephone: primaryPhone,
+    contactPoint: v.phones ? JSON.parse(`[${contactPoints(v)}]`) : undefined,
+    address: { '@type': 'PostalAddress', streetAddress: v.address ?? niche.place, addressLocality: city, addressCountry: 'US' },
+    sameAs: (v.socials ?? []).map((s) => s.url),
+  });
+  const fontsUrl = `https://fonts.googleapis.com/css2?family=${design.fontHead.replace(/ /g, '+')}:wght@400;600;700;800&family=${design.fontBody.replace(/ /g, '+')}:wght@400;500;700&display=swap`;
+  const initial = (brand.replace(/^The /i, '').trim().charAt(0) || 'B').toUpperCase();
+  const favSvg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='${palette.accent}'/><text x='32' y='43' font-family='Arial,sans-serif' font-size='34' font-weight='800' text-anchor='middle' fill='${palette.inkOnAccent}'>${initial}</text></svg>`;
+
+  return `<!DOCTYPE html>
+<html lang="en" data-hero="${design.heroVariant}">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>${page?.title ?? kind} — ${brand}</title>
+<meta name="generator" content="Beast Web Developer 3.0"/>
+<meta name="description" content="${brand} — ${page?.purpose ?? niche.label} in ${city}. ${art.brief?.promise ?? ''}"/>
+<meta name="theme-color" content="${palette.bg}" media="(prefers-color-scheme: light)"/>${dk ? `<meta name="theme-color" content="${dk.tokens.bg}" media="(prefers-color-scheme: dark)"/>` : ''}
+<link rel="icon" href="data:image/svg+xml,${encodeURIComponent(favSvg)}"/>
+<meta property="og:type" content="website"/>
+<meta property="og:site_name" content="${brand}"/>
+<meta property="og:title" content="${page?.title ?? kind} — ${brand}"/>
+<script type="application/ld+json">${jsonLd}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="${fontsUrl}" rel="stylesheet"/>
+<style>${buildCss(palette, design, niche, dk?.tokens)}</style>
+</head>
+<body data-hero="${design.heroVariant}" data-motif="${design.motif}">
+<a class="skip" href="#main">Skip to content</a>
+<div class="ambient" aria-hidden="true"></div>
+<header class="nav"><div class="wrap navIn">
+  <a class="logo" href="index.html"><span class="logoDot"></span>${brand}</a>
+  <ul class="navLinks">${navLinks}</ul>
+  <a class="btn btnFill navCta" href="${pages.find((p) => p.key === 'contact')?.file ?? 'contact.html'}" style="min-height:44px">Enquire</a>
+  <button class="burger" aria-label="Open menu" aria-expanded="false" onclick="document.getElementById('drawer').classList.add('open')"><span></span><span></span><span></span></button>
+</div></header>
+<nav class="drawer" id="drawer" aria-label="Mobile menu">
+  <div class="drawerTop"><span class="logo"><span class="logoDot"></span>${brand}</span>
+  <button class="burger" style="display:inline-flex" aria-label="Close menu" onclick="document.getElementById('drawer').classList.remove('open')"><span style="transform:rotate(45deg) translateY(5px)"></span><span style="opacity:0"></span><span style="transform:rotate(-45deg) translateY(-5px)"></span></button></div>
+  ${drawerLinks}
+  <a class="btn btnFill" href="${pages.find((p) => p.key === 'contact')?.file ?? 'contact.html'}" onclick="document.getElementById('drawer').classList.remove('open')">Enquire</a>
+</nav>
+<main id="main">
+${main}
+</main>
+<footer class="site"><div class="wrap">
+  <div class="footCols">
+    <div><a class="logo" href="index.html" style="color:var(--ink)"><span class="logoDot"></span>${brand}</a>
+      <p style="color:var(--inkSoft);font-size:.92rem;margin-top:10px;max-width:34ch">${brand} — ${niche.label} in ${city}.</p></div>
+    <div><h4>Explore</h4><ul>${pages.filter((p) => p.inNav).map((p) => `<li><a href="${p.file}">${p.title}</a></li>`).join('')}</ul></div>
+    <div><h4>Visit</h4><ul><li>${v.address ?? niche.place}</li><li><a href="mailto:${email}">${email}</a></li><li>${primaryPhone}</li></ul></div>
+    <div><h4>Follow</h4><ul class="socialList">${socialRow(v)}</ul></div>
+  </div>
+  <div class="copy">
+    <span>© <span class="stamp">${year}</span> ${owner}. All rights reserved.</span>
+    <span class="stamp">Grown by Beast Web Developer · seed ${seed.slice(0, 8)}</span>
+  </div>
+</div></footer>
+<div class="mbar"><a class="btn btnFill" href="tel:${primaryPhone.replace(/[^+\d]/g, '')}">Call</a><a class="btn btnGhost" href="${pages.find((p) => p.key === 'contact')?.file ?? 'contact.html'}" style="background:var(--bg)">Book</a></div>
+<script>
+  var y=document.querySelectorAll('.stamp');for(var i=0;i<y.length;i++){if(y[i].textContent.length===4)y[i].textContent=new Date().getFullYear()}
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}})},{threshold:.12});
+  document.querySelectorAll('.reveal').forEach(function(el){io.observe(el)});
+</script>
+</body>
+</html>`;
+}
+
+function rng0(seed: string): string {
+  return seed.length > 3 ? '' : '';
+}
+
 /* ---------- support pack ----------
    Research-based launch essentials for a sellable static site:
    sitemap.xml + robots.txt (technical SEO), 404.html (dead-link safety),
@@ -554,7 +802,7 @@ ${design.sectionOrder.map((s) => secHtml[s]).join('\n')}
 export function renderSupportFiles(
   seed: string,
   owner: string,
-  meta?: { price?: number; copyright?: string }
+  meta?: { price?: number; copyright?: string; pages?: string[] }
 ): { 'sitemap.xml': string; 'robots.txt': string; '404.html': string; 'DESIGN-NOTES.md': string } {
   const { niche, brand, city, design, palette } = designFromSeed(seed);
   const dk = palette.theme === 'dark' ? null : deriveDarkTokens(palette);
@@ -565,12 +813,12 @@ export function renderSupportFiles(
   const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <!-- Buyer: replace example.com with your real domain after deployment. -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
-    <loc>https://${domain}/</loc>
+${(meta?.pages ?? ['index.html']).map((f, i) => `  <url>
+    <loc>https://${domain}/${f === 'index.html' ? '' : f}</loc>
     <lastmod>${new Date().toISOString().slice(0, 10)}</lastmod>
     <changefreq>monthly</changefreq>
-    <priority>1.0</priority>
-  </url>
+    <priority>${i === 0 ? '1.0' : '0.8'}</priority>
+  </url>`).join('\n')}
 </urlset>
 `;
 
