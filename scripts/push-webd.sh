@@ -28,7 +28,10 @@ git remote remove deploy >/dev/null 2>&1 || true
 git remote add deploy "$REMOTE"
 
 echo "== pushing main → github.com/abbylukwa/Webd =="
-if git push deploy main --force-with-lease=main; then
+# Plain --force: this sandbox is the canonical source; earlier remote commits
+# were made via the Git Data API with unrelated SHAs, so a fast-forward is
+# impossible. The user's project repo is overwritten with the local truth.
+if git push deploy main --force; then
   echo "PUSH OK."
 else
   echo "PUSH FAILED (bad token? expired? no repo access?)."

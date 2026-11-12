@@ -309,8 +309,7 @@ export async function runNextTask(ctx: TaskCtx, site: V3Site): Promise<string> {
   const task = site.tasks.find((t) => t.status === 'queued');
   if (!task) return `${site.brand}: no queued task (ledger complete)`;
   task.status = 'running';
-  const { designFromSeed: dfs } = require('./render') as typeof import('./render');
-  const probe = dfs(site.seed);
+  const probe = designFromSeed(site.seed);
 
   let applied = '';
   let precision = 0;
