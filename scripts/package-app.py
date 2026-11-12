@@ -13,7 +13,7 @@ ROOT = Path("/home/z/my-project")
 OUT = ROOT / "download" / "beast-web-developer.zip"
 OUT.parent.mkdir(parents=True, exist_ok=True)
 
-INCLUDE_DIRS = ["src", "prisma", "public", "scripts"]
+INCLUDE_DIRS = ["src", "public", "scripts", "docs"]
 INCLUDE_FILES = [
     "package.json",
     "bun.lock",
@@ -39,11 +39,6 @@ def zip_write(zf: zipfile.ZipFile, arcname: str, data: bytes):
     zf.writestr(info, data)
 
 with zipfile.ZipFile(OUT, "w") as zf:
-    # portable .env (relative sqlite path resolved from prisma/schema.prisma)
-    zip_write(zf, "beast-web-developer/.env", b'DATABASE_URL=file:../db/custom.db\n')
-    # keep the db folder present with a placeholder
-    zip_write(zf, "beast-web-developer/db/.gitkeep", b"")
-
     for d in INCLUDE_DIRS:
         base = ROOT / d
         if not base.exists():
@@ -92,15 +87,23 @@ with zipfile.ZipFile(OUT) as zf:
         "beast-web-developer/DEPLOY.md",
         "beast-web-developer/render.yaml",
         "beast-web-developer/.node-version",
-        "beast-web-developer/.env",
-        "beast-web-developer/db/.gitkeep",
     ]
     missing = [r for r in required if r not in names]
     assert not missing, f"missing: {missing}"
     # the prisma schema is legacy scaffolding from an earlier iteration —
     # engine v2 is file-based; flag only if it vanished silently
-    env_content = zf.read("beast-web-developer/.env").decode()
-    assert "file:../db/custom.db" in env_content, "portable .env not applied"
+    v3_required = [
+        "beast-web-developer/src/app/control/page.tsx",
+        "beast-web-developer/src/lib/beast/tasks.ts",
+        "beast-web-developer/src/lib/beast/values.ts",
+        "beast-web-developer/src/lib/beast/storage.ts",
+        "beast-web-developer/src/lib/beast/images.ts",
+        "beast-web-developer/src/lib/beast/ai.ts",
+        "beast-web-developer/docs/UPGRADE-RESEARCH.md",
+        "beast-web-developer/docs/research/07-github-storage.md",
+    ]
+    missing_v3 = [r for r in v3_required if r not in names]
+    assert not missing_v3, f"missing v3: {missing_v3}"
     assert not any("repo-scratch" in n or "node_modules" in n for n in names), "junk leaked in"
     # selftest.ts must be present and reference the engine sandbox
     st = zf.read("beast-web-developer/src/lib/beast/selftest.ts").decode()

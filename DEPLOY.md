@@ -102,11 +102,34 @@ The engine keeps everything in `BEAST_DATA_DIR` (default `data/`):
 plan Render's filesystem is **ephemeral**: every deploy and every restart
 wipes it, so the studio resets to Day 1 and the owner name resets.
 
-- Free plan workaround: use **Download all** (control-room header) after
-  each work day and keep the ZIPs; they are the portable archive.
+- **The vault (free-plan fix):** once `BEAST_GH_TOKEN` is set, the studio
+  auto-creates `beast-studio-vault` on your GitHub account and commits the
+  full studio state (day counter, task ledger, transcript) on every change.
+  On the next cold boot it adopts that ledger — progress survives deploys.
+  Each finished shelf site also gets its own repo (`beast-site-<slug>-<seed6>`)
+  with every page, asset, values.json and ATTRIBUTION.md in one commit.
+- No-token fallback: use **Download all** (studio header) after each work
+  day and keep the ZIPs; they are the portable archive.
 - Paid plan fix: attach a 1 GB disk mounted at `/var/data` and set
   `BEAST_DATA_DIR=/var/data` — the studio then survives deploys and
   redeploys indefinitely.
+
+## v3 environment variables (the owner's switches)
+
+| Variable | Set to | Effect |
+| --- | --- | --- |
+| `BEAST_GH_TOKEN` | a GitHub token (repo scope) | **The vault.** Every shelf site auto-publishes to its own repo `beast-site-<slug>-<seed6>` in one atomic commit. Without it the publish task defers (Push button retries) — the studio never blocks. |
+| `BEAST_AI_VAULT` | JSON array of API keys | Enables the governed AI path (providers auto-detected by key shape: `sk-`, `sk-ant-`, `gsk_`, `AIza`, `xai-`, `sk-or-v1-`). Without it the deterministic solver runs everything. |
+| `BEAST_AI` | `0` | Hard-disables AI calls even with a vault configured. |
+| `BEAST_IMAGES` | `0` | Forces the offline image floor (gradients) — used by the self-test sandbox. |
+| `BEAST_WARMUP` | `1` | Opt-in demo warm-up replay. Default is the empty studio (v3 fresh start). |
+
+Add `BEAST_GH_TOKEN` / `BEAST_AI_VAULT` in the Render dashboard →
+*Environment* (values are secret; `render.yaml` ships them as
+`sync: false` placeholders). Tokens are used server-side only, are never
+printed, stored in state, or sent to the browser. **Security note:** any
+token that has appeared in chat or screenshots should be revoked and
+rotated after setup.
 
 A side effect of spin-downs is benign: the engine's date catch-up
 completes any missed work days on the next boot, so an idle studio

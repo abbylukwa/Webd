@@ -35,6 +35,18 @@ services:
       # interface.
       - key: HOSTNAME
         value: 0.0.0.0
+      # GitHub vault — the durable archive. Create a fine-scoped token
+      # (repo scope) and paste it in the Render dashboard Environment.
+      # With it, every shelf site is auto-published to its own repo:
+      # beast-site-<slug>-<seed6> — one atomic commit per publish.
+      - key: BEAST_GH_TOKEN
+        sync: false
+      # AI key vault (optional): JSON array of API keys, e.g.
+      # [{"id":"1","label":"groq","key":"gsk_...","addedAt":"2026-01-01"}]
+      # Providers auto-detected by key shape; round-robin with cooldown.
+      # Without it the deterministic solver runs everything (studio never stalls).
+      - key: BEAST_AI_VAULT
+        sync: false
 
     # ---- PERSISTENCE (paid plans only) ------------------------------------
     # Render's filesystem is EPHEMERAL on the free plan: every deploy and

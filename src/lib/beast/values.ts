@@ -132,15 +132,16 @@ export function validateValues(v: SiteValues): { ok: boolean; issues: ValuesIssu
   if (!clean.brand || !clean.brand.trim()) issues.push({ field: 'brand', problem: 'required' });
   clean.phones = (clean.phones ?? []).slice(0, MAX_PHONES);
   if ((v.phones ?? []).length > MAX_PHONES) issues.push({ field: 'phones', problem: `capped at ${MAX_PHONES}` });
-  clean.products = (clean.products ?? []).slice(0, MAX_PRODUCTS);
-  if ((v.products ?? []).length > MAX_PRODUCTS) issues.push({ field: 'products', problem: `capped at ${MAX_PRODUCTS}` });
-  const names = new Set<string>();
-  clean.products = clean.products.filter((p) => {
+  // dedupe FIRST, then cap — the owner always keeps MAX_PRODUCTS unique items
+  const seen = new Set<string>();
+  const unique = (clean.products ?? []).filter((p) => {
     const n = (p.name ?? '').trim();
-    if (!n || names.has(n)) return false;
-    names.add(n);
+    if (!n || seen.has(n)) return false;
+    seen.add(n);
     return true;
   });
+  clean.products = unique.slice(0, MAX_PRODUCTS);
+  if ((v.products ?? []).length > MAX_PRODUCTS) issues.push({ field: 'products', problem: `capped at ${MAX_PRODUCTS}` });
   clean.socials = (clean.socials ?? []).slice(0, SOCIAL_PLATFORMS.length);
   for (const p of clean.products) p.price = Math.max(0, Number(p.price) || 0);
   clean.domain = (clean.domain ?? '').replace(/^https?:\/\//, '').replace(/\/$/, '');

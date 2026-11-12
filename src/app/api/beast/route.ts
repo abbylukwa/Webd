@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  loadState, tick, forceDay, clearWorkspace, setOwner, runTaskNow, setValues, pushToGithub,
+  loadState, tick, forceDay, clearWorkspace, setOwner, runTaskNow, setValues, pushToGithub, adoptVaultState,
   STAGES, DEVICE_CLASSES, CONCURRENCY, ENGINE_VERSION,
 } from '@/lib/beast/engine';
 import { githubConfigured } from '@/lib/beast/storage';
@@ -42,9 +42,11 @@ function publicState(state: ReturnType<typeof loadState>) {
         tasks: s.tasks.map((t) => ({
           id: t.id, kind: t.kind, title: t.title, why: t.why, status: t.status,
           pageKey: t.pageKey ?? null, device: t.device ?? null, detour: t.detour ?? false,
-          attempts: t.attempts, precision: t.precision, note: t.note ?? null,
+          attempts: t.attempts, precision: t.precision, note: t.note ?? null, rules: t.rules.length,
         })),
         pages: s.art.pages ?? [],
+        brief: s.art.brief ?? null,
+        revisions: s.art.revisions ?? null,
         git: s.art.git ?? null,
         valuesSummary: s.art.values ? {
           phones: s.art.values.phones.length,
@@ -68,6 +70,7 @@ function publicState(state: ReturnType<typeof loadState>) {
 
 export async function GET() {
   const state = loadState();
+  await adoptVaultState(state); // cold boot? adopt the vaulted studio (durable memory)
   await tick(state); // auto catch-up on missed real days
   return NextResponse.json(publicState(state));
 }
@@ -94,9 +97,14 @@ export async function POST(req: NextRequest) {
       await setOwner(state, String(body.owner ?? ''));
       return NextResponse.json({ ok: true, ...publicState(state) });
     }
+    case 'getValues': {
+      const site = state.sites.find((s) => s.id === body.siteId);
+      if (!site) return NextResponse.json({ error: 'site not found' }, { status: 404 });
+      return NextResponse.json({ ok: true, values: site.art.values ?? null });
+    }
     case 'setValues': {
       if (!body.siteId) return NextResponse.json({ error: 'siteId required' }, { status: 400 });
-      const res = setValues(state, body.siteId, body.values);
+      const res = await setValues(state, body.siteId, body.values);
       return NextResponse.json({ ...res, ...publicState(state) }, { status: res.ok ? 200 : 400 });
     }
     case 'pushGithub': {

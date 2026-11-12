@@ -1,0 +1,537 @@
+     1→'use client';
+     2→
+     3→// MISSION CONTROL — the huge panel: whole progress, difference, precisions,
+     4→// and every AI answer with its interpretation ("this answer means this, do this").
+     5→// Everything the studio does is visible here, and everything is controllable.
+     6→
+     7→import { useCallback, useEffect, useState } from 'react';
+     8→import Link from 'next/link';
+     9→import { Button } from '@/components/ui/button';
+    10→import { Badge } from '@/components/ui/badge';
+    11→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+    12→import { Input } from '@/components/ui/input';
+    13→import { Progress } from '@/components/ui/progress';
+    14→import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+    15→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+    16→import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+    17→import { ScrollArea } from '@/components/ui/scroll-area';
+    18→import { Separator } from '@/components/ui/separator';
+    19→import { useToast } from '@/hooks/use-toast';
+    20→import {
+    21→  Activity, ArrowLeft, Braces, CheckCircle2, ChevronDown, Clock, Database, FileDiff, Gauge,
+    22→  Github, GitBranch, Pencil, Play, RefreshCw, Send, ShieldCheck, Sparkles, Trash2, XCircle, Zap,
+    23→} from 'lucide-react';
+    24→
+    25→/* ---------- types (mirror of /api/beast) ---------- */
+    26→type Task = { id: string; kind: string; title: string; why: string; status: string; pageKey: string | null; device: string | null; detour: boolean; attempts: number; precision: number; note: string | null; rules: number };
+    27→type Site = {
+    28→  id: string; brand: string; nicheLabel: string; city: string; stageIndex: number; status: string; price: number; startedDay: number;
+    29→  design: { heroVariant: string; navVariant: string; motif: string; fontHead: string; fontBody: string; spaceRhythm: string; sectionCount: number };
+    30→  palette: { name: string; harmony: string; theme: string; swatches: string[] };
+    31→  qa: { contrast: { pair: string; ratio: number; pass: boolean }[]; breakpoints: string[]; crap: string[] } | null;
+    32→  copyright: string; log: { day: number; entry: string }[];
+    33→  tasks: Task[]; pages: { key: string; title: string; purpose: string; file: string; inNav: boolean }[];
+    34→  brief: { audience: string; tone: string; promise: string; cityStory?: string } | null;
+    35→  revisions: Record<string, { v: number; lines: number; diff: number; at: string }[]> | null;
+    36→  git: { repo: string; url: string; pushedAt: string } | null;
+    37→  valuesSummary: { phones: number; products: number; socials: number } | null;
+    38→  images: { slotId: string; status: string; source: string; license: string | null }[];
+    39→  progress: number;
+    40→  taskCounts: { total: number; accepted: number; queued: number; deferred: number };
+    41→};
+    42→type Turn = { id: string; taskId: string; taskTitle: string; provider: string; mode: string; promptTitle: string; envelope: string; raw: string; interpretation: string; verdict: string; action: string; precision: number; at: string };
+    43→type State = {
+    44→  version: number; day: number; owner: string; concurrency: number;
+    45→  stages: { key: string; label: string; desc: string }[];
+    46→  devices: { id: string; name: string; range: string }[];
+    47→  layoutCount: number; github: { configured: boolean }; ai: { enabled: boolean };
+    48→  sites: Site[]; transcript: Turn[]; log: { day: number; date: string; jobs: string[] }[];
+    49→};
+    50→
+    51→const STATUS_STYLE: Record<string, string> = {
+    52→  'in-studio': 'bg-amber-950 text-amber-300 border-amber-800',
+    53→  'for-sale': 'bg-emerald-950 text-emerald-300 border-emerald-800',
+    54→  'sold': 'bg-zinc-800 text-zinc-300 border-zinc-600',
+    55→};
+    56→const VERDICT_STYLE: Record<string, 'default' | 'secondary' | 'destructive'> = { ACCEPT: 'default', REFINE: 'secondary', DEFER: 'destructive' };
+    57→
+    58→const CODEBOOK = [
+    59→  { pattern: 'Answer parses as JSON and satisfies the contract (length, banned words, required fields)', means: 'The AI did its job — the output is trustworthy for this task.', action: 'ACCEPT → frozen into the site artifacts, task marked accepted with precision 1.0.', icon: 'accept' },
+    60→  { pattern: 'Answer is not parseable JSON (prose, preamble, markdown chatter)', means: 'The contract was ignored — the answer is unusable as-is.', action: 'REFINE → re-queued with the critique attached (attempt n/3). After 3 failures → deterministic solver finishes the task.', icon: 'refine' },
+    61→  { pattern: 'Answer violates a rule (banned marketing word, heading > 60 chars, body outside 25–70 words)', means: 'Style-governance breach — quality floor enforced.', action: 'REFINE with the exact violated rule as the critique so the next attempt fixes it.', icon: 'refine' },
+    62→  { pattern: 'AI pool empty, keys unhealthy, or provider timeout', means: 'No AI is available right now — the studio never waits.', action: 'DEFER → deterministic solver produces the artifact immediately. Zero downtime, precision noted honestly.', icon: 'defer' },
+    63→  { pattern: 'GitHub publish attempted with no BEAST_GH_TOKEN configured', means: 'The archive vault is not connected yet.', action: 'DEFER → task parked (Publish button retries it). Add the token in the Render dashboard Environment to enable.', icon: 'defer' },
+    64→  { pattern: 'Image sources return nothing usable (Openverse → Wikimedia miss)', means: 'No openly-licensed match found for that slot.', action: 'Fall back Picsum → gradient floor; slot stays attributed; determinism record frozen so it is never re-fetched.', icon: 'defer' },
+    65→];
+    66→
+    67→export default function ControlPage() {
+    68→  const [state, setState] = useState<State | null>(null);
+    69→  const [busy, setBusy] = useState<string>('');
+    70→  const [ownerDraft, setOwnerDraft] = useState('');
+    71→  const [editorSite, setEditorSite] = useState<string>('');
+    72→  const [values, setValues] = useState<Record<string, unknown> | null>(null);
+    73→  const { toast } = useToast();
+    74→
+    75→  const refresh = useCallback(async () => {
+    76→    try {
+    77→      const res = await fetch('/api/beast', { cache: 'no-store' });
+    78→      const json = (await res.json()) as State;
+    79→      setState(json);
+    80→      setOwnerDraft((d) => d || json.owner);
+    81→    } catch { /* the studio keeps running even if a poll fails */ }
+    82→  }, []);
+    83→
+    84→  useEffect(() => { refresh(); }, [refresh]);
+    85→  useEffect(() => {
+    86→    const t = setInterval(refresh, 15000);
+    87→    return () => clearInterval(t);
+    88→  }, [refresh]);
+    89→
+    90→  const act = useCallback(async (body: Record<string, unknown>, label: string) => {
+    91→    setBusy(label);
+    92→    try {
+    93→      const res = await fetch('/api/beast', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    94→      const json = await res.json();
+    95→      if (json.error) throw new Error(json.error);
+    96→      setState(json as State);
+    97→      toast({ title: label, description: Array.isArray(json.jobs) ? json.jobs.slice(0, 2).join(' · ') : 'Done.' });
+    98→    } catch (e) {
+    99→      toast({ title: `${label} failed`, description: String((e as Error).message), variant: 'destructive' });
+   100→    } finally { setBusy(''); }
+   101→  }, [toast]);
+   102→
+   103→  const openEditor = async (siteId: string) => {
+   104→    setEditorSite(siteId);
+   105→    setValues(null);
+   106→    try {
+   107→      const res = await fetch('/api/beast', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'getValues', siteId }) });
+   108→      const json = await res.json();
+   109→      setValues(json.values ?? {});
+   110→    } catch { toast({ title: 'Could not load values', variant: 'destructive' }); }
+   111→  };
+   112→
+   113→  const saveValues = async () => {
+   114→    if (!editorSite || !values) return;
+   115→    setBusy('Save values');
+   116→    try {
+   117→      const res = await fetch('/api/beast', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'setValues', siteId: editorSite, values }) });
+   118→      const json = await res.json();
+   119→      if (!res.ok || json.ok === false) throw new Error((json.issues ?? ['invalid values']).join('; '));
+   120→      setState(json as State);
+   121→      toast({ title: 'Values saved', description: 'Every built page re-rendered with the new facts.' });
+   122→    } catch (e) {
+   123→      toast({ title: 'Save rejected', description: String((e as Error).message), variant: 'destructive' });
+   124→    } finally { setBusy(''); }
+   125→  };
+   126→
+   127→  if (!state) {
+   128→    return (
+   129→      <div className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center">
+   130→        <div className="flex items-center gap-3 text-zinc-400"><RefreshCw className="h-5 w-5 animate-spin" /> Waking the Beast…</div>
+   131→      </div>
+   132→    );
+   133→  }
+   134→
+   135→  const inStudio = state.sites.filter((s) => s.status === 'in-studio');
+   136→  const forSale = state.sites.filter((s) => s.status === 'for-sale');
+   137→  const allTasks = state.sites.flatMap((s) => s.tasks);
+   138→  const avgProgress = state.sites.length ? Math.round(state.sites.reduce((a, s) => a + s.progress, 0) / state.sites.length) : 0;
+   139→  const verdicts = state.transcript.reduce<Record<string, number>>((m, t) => { m[t.verdict] = (m[t.verdict] ?? 0) + 1; return m; }, {});
+   140→  const aiTurns = state.transcript.filter((t) => t.mode === 'ai').length;
+   141→  const accepted = allTasks.filter((t) => t.status === 'accepted');
+   142→  const avgPrecision = accepted.length ? accepted.reduce((a, t) => a + t.precision, 0) / accepted.length : 0;
+   143→  const qaPairs = state.sites.flatMap((s) => s.qa?.contrast ?? []);
+   144→  const qaPass = qaPairs.length ? Math.round((qaPairs.filter((p) => p.pass).length / qaPairs.length) * 100) : null;
+   145→
+   146→  const v = (values ?? {}) as {
+   147→    brand?: string; tagline?: string; domain?: string; address?: string; hoursDisplay?: string[]; emails?: string[];
+   148→    phones?: { label: string; number: string }[]; socials?: { platform: string; handle: string; url: string }[];
+   149→    products?: { name: string; desc: string; price: number; tag?: string }[];
+   150→  };
+   151→
+   152→  const socialUrlFor = (platform: string, handle: string): string => {
+   153→    const h = handle.replace(/^@/, '');
+   154→    if (platform === 'whatsapp') return `https://wa.me/${h.replace(/[^\d]/g, '')}`;
+   155→    if (platform === 'x') return `https://x.com/${h}`;
+   156→    if (platform === 'linkedin') return `https://linkedin.com/company/${h}`;
+   157→    if (platform === 'youtube') return `https://youtube.com/@${h}`;
+   158→    if (platform === 'tiktok') return `https://tiktok.com/@${h}`;
+   159→    return `https://${platform}.com/${h}`;
+   160→  };
+   161→
+   162→  return (
+   163→    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+   164→      <header className="border-b border-zinc-800 bg-zinc-900/60 sticky top-0 z-40 backdrop-blur">
+   165→        <div className="mx-auto max-w-7xl px-4 py-3 flex items-center gap-3 flex-wrap">
+   166→          <Link href="/"><Button variant="ghost" size="sm" className="text-zinc-400"><ArrowLeft className="h-4 w-4 mr-1" /> Studio</Button></Link>
+   167→          <div className="flex items-center gap-2">
+   168→            <Gauge className="h-5 w-5 text-amber-400" />
+   169→            <h1 className="font-semibold tracking-tight">Mission Control</h1>
+   170→            <Badge variant="outline" className="text-zinc-400">v{state.version}</Badge>
+   171→          </div>
+   172→          <div className="ml-auto flex items-center gap-2 text-xs text-zinc-400 flex-wrap">
+   173→            <Badge variant="outline" className="gap-1"><Clock className="h-3 w-3" /> DAY {state.day}</Badge>
+   174→            <Badge variant="outline" className="gap-1"><Database className="h-3 w-3" /> GitHub {state.github.configured ? 'connected' : 'not connected'}</Badge>
+   175→            <Badge variant="outline" className="gap-1"><Sparkles className="h-3 w-3" /> AI {state.ai.enabled ? 'enabled' : 'solver floor'}</Badge>
+   176→            <Badge variant="outline" className="gap-1"><Braces className="h-3 w-3" /> {state.layoutCount} layouts</Badge>
+   177→            <Button variant="ghost" size="sm" onClick={refresh} className="text-zinc-400"><RefreshCw className="h-4 w-4" /></Button>
+   178→          </div>
+   179→        </div>
+   180→      </header>
+   181→
+   182→      <main className="mx-auto max-w-7xl px-4 py-6 space-y-6">
+   183→        {/* top stat strip */}
+   184→        <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+   185→          {[
+   186→            { label: 'Overall progress', value: `${avgProgress}%` },
+   187→            { label: 'In studio', value: inStudio.length },
+   188→            { label: 'On the shelf', value: forSale.length },
+   189→            { label: 'Micro-tasks done', value: accepted.length },
+   190→            { label: 'Avg precision', value: avgPrecision ? `${Math.round(avgPrecision * 100)}%` : '—' },
+   191→            { label: 'QA contrast', value: qaPass === null ? '—' : `${qaPass}%` },
+   192→          ].map((s) => (
+   193→            <Card key={s.label} className="bg-zinc-900 border-zinc-800">
+   194→              <CardContent className="p-4">
+   195→                <div className="text-xs text-zinc-500">{s.label}</div>
+   196→                <div className="text-2xl font-semibold mt-1">{s.value}</div>
+   197→              </CardContent>
+   198→            </Card>
+   199→          ))}
+   200→        </div>
+   201→
+   202→        <Tabs defaultValue="progress">
+   203→          <TabsList className="bg-zinc-900 border border-zinc-800 flex-wrap h-auto">
+   204→            <TabsTrigger value="progress" className="gap-1"><Activity className="h-3.5 w-3.5" /> Progress</TabsTrigger>
+   205→            <TabsTrigger value="difference" className="gap-1"><FileDiff className="h-3.5 w-3.5" /> Difference</TabsTrigger>
+   206→            <TabsTrigger value="precision" className="gap-1"><ShieldCheck className="h-3.5 w-3.5" /> Precisions</TabsTrigger>
+   207→            <TabsTrigger value="ai" className="gap-1"><Sparkles className="h-3.5 w-3.5" /> AI answers <Badge variant="secondary" className="ml-1">{state.transcript.length}</Badge></TabsTrigger>
+   208→            <TabsTrigger value="controls" className="gap-1"><Zap className="h-3.5 w-3.5" /> Controls</TabsTrigger>
+   209→          </TabsList>
+   210→
+   211→          {/* ─────────────── PROGRESS ─────────────── */}
+   212→          <TabsContent value="progress" className="space-y-4">
+   213→            {state.sites.length === 0 && (
+   214→              <Card className="bg-zinc-900 border-zinc-800"><CardContent className="p-8 text-center text-zinc-400">
+   215→                The studio floor is empty — every site will be earned task by task. Use <b>Controls → Skip ahead</b> to run a work day now.
+   216→              </CardContent></Card>
+   217→            )}
+   218→            <div className="grid md:grid-cols-2 gap-4">
+   219→              {state.sites.map((s) => (
+   220→                <Card key={s.id} className="bg-zinc-900 border-zinc-800">
+   221→                  <CardHeader className="pb-2">
+   222→                    <div className="flex items-center gap-2 flex-wrap">
+   223→                      <CardTitle className="text-base">{s.brand}</CardTitle>
+   224→                      <Badge variant="outline" className={STATUS_STYLE[s.status]}>{s.status}</Badge>
+   225→                      <Badge variant="outline" className="text-zinc-400">{state.stages[Math.min(s.stageIndex, 6)]?.label ?? 'Stage 0'}</Badge>
+   226→                      {s.price > 0 && <Badge variant="outline" className="text-emerald-300">${s.price}</Badge>}
+   227→                    </div>
+   228→                    <div className="text-xs text-zinc-500">{s.nicheLabel} in {s.city} · seed {s.id.slice(-6)} · palette “{s.palette.name}” ({s.palette.harmony})</div>
+   229→                  </CardHeader>
+   230→                  <CardContent className="space-y-3">
+   231→                    <div>
+   232→                      <div className="flex justify-between text-xs text-zinc-400 mb-1"><span>Ledger</span><span>{s.progress}% · {s.taskCounts.accepted}/{s.taskCounts.total} accepted{s.taskCounts.deferred ? ` · ${s.taskCounts.deferred} deferred` : ''}</span></div>
+   233→                      <Progress value={s.progress} className="h-2" />
+   234→                    </div>
+   235→                    <div className="flex flex-wrap gap-1 text-[11px]">
+   236→                      {s.pages.map((p) => (
+   237→                        <Badge key={p.key} variant="secondary" className="bg-zinc-800 text-zinc-300">{p.file}</Badge>
+   238→                      ))}
+   239→                      {s.valuesSummary && (
+   240→                        <Badge variant="secondary" className="bg-zinc-800 text-zinc-300">{s.valuesSummary.phones} phones · {s.valuesSummary.products} products · {s.valuesSummary.socials} socials</Badge>
+   241→                      )}
+   242→                    </div>
+   243→                    <div className="flex flex-wrap gap-1 text-[11px] text-zinc-500">
+   244→                      {s.images.slice(0, 8).map((im) => (
+   245→                        <span key={im.slotId} className={`px-1.5 py-0.5 rounded border ${im.status === 'live' ? 'border-emerald-800 text-emerald-400' : im.status === 'picsum' ? 'border-sky-800 text-sky-400' : 'border-zinc-700'}`}>{im.slotId}: {im.status}</span>
+   246→                      ))}
+   247→                    </div>
+   248→                    {s.git && (
+   249→                      <a href={s.git.url} target="_blank" rel="noopener" className="text-xs text-sky-400 hover:underline inline-flex items-center gap-1"><GitBranch className="h-3 w-3" /> {s.git.repo}</a>
+   250→                    )}
+   251→                    <Separator className="bg-zinc-800" />
+   252→                    <ScrollArea className="h-28">
+   253→                      <ul className="space-y-1 text-xs text-zinc-400 pr-2">
+   254→                        {s.tasks.filter((t) => t.status === 'accepted').slice(-4).map((t) => (
+   255→                          <li key={t.id} className="flex gap-2"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" /><span><b className="text-zinc-300">{t.title}</b> — {t.note ?? 'accepted'}</span></li>
+   256→                        ))}
+   257→                        {s.tasks.filter((t) => t.status === 'queued').slice(0, 3).map((t) => (
+   258→                          <li key={t.id} className="flex gap-2 text-zinc-500"><Clock className="h-3.5 w-3.5 shrink-0 mt-0.5" /><span>next: {t.title}</span></li>
+   259→                        ))}
+   260→                      </ul>
+   261→                    </ScrollArea>
+   262→                  </CardContent>
+   263→                </Card>
+   264→              ))}
+   265→            </div>
+   266→          </TabsContent>
+   267→
+   268→          {/* ─────────────── DIFFERENCE ─────────────── */}
+   269→          <TabsContent value="difference" className="space-y-4">
+   270→            <div className="grid lg:grid-cols-2 gap-4">
+   271→              <Card className="bg-zinc-900 border-zinc-800">
+   272→                <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><FileDiff className="h-4 w-4 text-sky-400" /> Work log — what changed, day by day</CardTitle></CardHeader>
+   273→                <CardContent>
+   274→                  <ScrollArea className="h-96">
+   275→                    <div className="space-y-3 pr-2">
+   276→                      {state.log.map((d) => (
+   277→                        <div key={`${d.day}-${d.date}`} className="border-l-2 border-zinc-700 pl-3">
+   278→                          <div className="text-xs text-zinc-500">DAY {d.day} · {d.date}</div>
+   279→                          <ul className="text-xs text-zinc-300 mt-1 space-y-0.5">
+   280→                            {d.jobs.map((j, i) => <li key={i}>· {j}</li>)}
+   281→                          </ul>
+   282→                        </div>
+   283→                      ))}
+   284→                    </div>
+   285→                  </ScrollArea>
+   286→                </CardContent>
+   287→              </Card>
+   288→              <Card className="bg-zinc-900 border-zinc-800">
+   289→                <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><FileDiff className="h-4 w-4 text-sky-400" /> Page revisions — the polish diff</CardTitle></CardHeader>
+   290→                <CardContent className="space-y-3">
+   291→                  {state.sites.map((s) => {
+   292→                    const revs = Object.entries(s.revisions ?? {});
+   293→                    if (!revs.length) return null;
+   294→                    return (
+   295→                      <div key={s.id}>
+   296→                        <div className="text-xs font-medium text-zinc-300 mb-1">{s.brand}</div>
+   297→                        {revs.map(([page, list]) => (
+   298→                          <div key={page} className="text-xs text-zinc-400 flex gap-2 items-center flex-wrap">
+   299→                            <span className="w-28 shrink-0 truncate text-zinc-500">{page}</span>
+   300→                            {list.map((r) => (
+   301→                              <Badge key={r.v} variant="outline" className="text-[10px] text-zinc-400">rev{r.v} · {r.lines} lines {r.diff ? `· Δ${r.diff}` : ''}</Badge>
+   302→                            ))}
+   303→                          </div>
+   304→                        ))}
+   305→                      </div>
+   306→                    );
+   307→                  })}
+   308→                  {!state.sites.some((s) => Object.keys(s.revisions ?? {}).length) && (
+   309→                    <p className="text-xs text-zinc-500">No revisions yet — they appear after pages are built and reviewed.</p>
+   310→                  )}
+   311→                </CardContent>
+   312→              </Card>
+   313→            </div>
+   314→          </TabsContent>
+   315→
+   316→          {/* ─────────────── PRECISIONS ─────────────── */}
+   317→          <TabsContent value="precision" className="space-y-4">
+   318→            <div className="grid md:grid-cols-4 gap-3">
+   319→              <Card className="bg-zinc-900 border-zinc-800"><CardContent className="p-4">
+   320→                <div className="text-xs text-zinc-500">AI verdicts (recent turns)</div>
+   321→                <div className="mt-2 flex flex-wrap gap-1">
+   322→                  <Badge>{verdicts.ACCEPT ?? 0} accept</Badge>
+   323→                  <Badge variant="secondary">{verdicts.REFINE ?? 0} refine</Badge>
+   324→                  <Badge variant="destructive">{verdicts.DEFER ?? 0} defer</Badge>
+   325→                </div>
+   326→                <div className="text-[11px] text-zinc-500 mt-2">{aiTurns} of {state.transcript.length} turns came from live AI; the rest from the deterministic floor.</div>
+   327→              </CardContent></Card>
+   328→              <Card className="bg-zinc-900 border-zinc-800"><CardContent className="p-4">
+   329→                <div className="text-xs text-zinc-500">Average task precision</div>
+   330→                <div className="text-2xl font-semibold mt-1">{Math.round(avgPrecision * 100)}%</div>
+   331→                <Progress value={avgPrecision * 100} className="h-1.5 mt-2" />
+   332→              </CardContent></Card>
+   333→              <Card className="bg-zinc-900 border-zinc-800"><CardContent className="p-4">
+   334→                <div className="text-xs text-zinc-500">QA contrast pairs passing</div>
+   335→                <div className="text-2xl font-semibold mt-1">{qaPass === null ? '—' : `${qaPass}%`}</div>
+   336→                <div className="text-[11px] text-zinc-500 mt-2">{qaPairs.length} pairs measured across shelf sites.</div>
+   337→              </CardContent></Card>
+   338→              <Card className="bg-zinc-900 border-zinc-800"><CardContent className="p-4">
+   339→                <div className="text-xs text-zinc-500">Governance gates</div>
+   340→                <div className="text-2xl font-semibold mt-1">{allTasks.filter((t) => t.status === 'accepted' && t.rules >= 3).length}/{allTasks.length}</div>
+   341→                <div className="text-[11px] text-zinc-500 mt-2">tasks carry the full envelope (rules + knowledge + why).</div>
+   342→              </CardContent></Card>
+   343→            </div>
+   344→            {state.sites.map((s) => {
+   345→              const acc = s.tasks.filter((t) => t.status === 'accepted');
+   346→              const avg = acc.length ? Math.round((acc.reduce((a, t) => a + t.precision, 0) / acc.length) * 100) : 0;
+   347→              return (
+   348→                <Card key={s.id} className="bg-zinc-900 border-zinc-800">
+   349→                  <CardHeader className="pb-2"><CardTitle className="text-sm">{s.brand} — per-task precision <Badge variant="outline" className="ml-2">{avg}% avg</Badge></CardTitle></CardHeader>
+   350→                  <CardContent className="flex flex-wrap gap-1.5">
+   351→                    {s.tasks.map((t) => (
+   352→                      <span key={t.id} title={`${t.title} — ${t.status} · why: ${t.why}`}
+   353→                        className={`text-[10px] px-1.5 py-0.5 rounded border ${t.status === 'accepted' ? (t.precision >= 0.9 ? 'border-emerald-800 text-emerald-400' : 'border-amber-800 text-amber-400') : t.status === 'deferred' ? 'border-red-800 text-red-400' : 'border-zinc-700 text-zinc-500'}`}>
+   354→                        {t.kind}{t.status === 'accepted' ? ` ${Math.round(t.precision * 100)}%` : ''}
+   355→                      </span>
+   356→                    ))}
+   357→                  </CardContent>
+   358→                </Card>
+   359→              );
+   360→            })}
+   361→          </TabsContent>
+   362→
+   363→          {/* ─────────────── AI ANSWERS ─────────────── */}
+   364→          <TabsContent value="ai" className="space-y-4">
+   365→            <Card className="bg-zinc-900 border-zinc-800">
+   366→              <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Braces className="h-4 w-4 text-amber-400" /> The codebook — what each kind of answer means and what happens next</CardTitle></CardHeader>
+   367→              <CardContent className="grid md:grid-cols-2 gap-3">
+   368→                {CODEBOOK.map((c, i) => (
+   369→                  <div key={i} className="rounded-lg border border-zinc-800 p-3 text-xs space-y-1">
+   370→                    <div className="flex items-start gap-2">
+   371→                      {c.icon === 'accept' ? <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" /> : c.icon === 'refine' ? <XCircle className="h-4 w-4 text-amber-500 shrink-0" /> : <Clock className="h-4 w-4 text-red-400 shrink-0" />}
+   372→                      <div>
+   373→                        <div className="text-zinc-200 font-medium">If the answer: {c.pattern}</div>
+   374→                        <div className="text-zinc-400 mt-0.5">It means: {c.means}</div>
+   375→                        <div className="text-sky-400 mt-0.5">Then: {c.action}</div>
+   376→                      </div>
+   377→                    </div>
+   378→                  </div>
+   379→                ))}
+   380→              </CardContent>
+   381→            </Card>
+   382→            <Card className="bg-zinc-900 border-zinc-800">
+   383→              <CardHeader className="pb-2"><CardTitle className="text-base">Every answer, interpreted — newest first</CardTitle></CardHeader>
+   384→              <CardContent className="space-y-3">
+   385→                {state.transcript.length === 0 && <p className="text-xs text-zinc-500">No turns yet — run a work day from Controls.</p>}
+   386→                {state.transcript.slice(0, 40).map((t) => (
+   387→                  <details key={t.id} className="rounded-lg border border-zinc-800 p-3 group">
+   388→                    <summary className="cursor-pointer list-none">
+   389→                      <div className="flex items-center gap-2 flex-wrap text-xs">
+   390→                        <Badge variant={VERDICT_STYLE[t.verdict] ?? 'secondary'}>{t.verdict}</Badge>
+   391→                        <Badge variant="outline" className="text-zinc-400">{t.provider}</Badge>
+   392→                        <Badge variant="outline" className="text-zinc-500">{t.mode}</Badge>
+   393→                        <span className="text-zinc-200 font-medium">{t.taskTitle}</span>
+   394→                        <span className="text-zinc-500">· {Math.round(t.precision * 100)}% · {new Date(t.at).toLocaleString()}</span>
+   395→                      </div>
+   396→                      <div className="text-xs text-zinc-400 mt-1.5"><b className="text-zinc-300">Understood:</b> {t.interpretation}</div>
+   397→                      <div className="text-xs text-sky-400 mt-0.5"><b>Did:</b> {t.action}</div>
+   398→                      <div className="text-[11px] text-zinc-600 mt-1 flex items-center gap-1 group-open:hidden"><ChevronDown className="h-3 w-3" /> show raw answer + envelope</div>
+   399→                    </summary>
+   400→                    <Separator className="bg-zinc-800 my-2" />
+   401→                    <div className="text-[11px] text-zinc-500">WHY: {t.promptTitle}</div>
+   402→                    <pre className="text-[10px] leading-relaxed text-zinc-400 bg-zinc-950 border border-zinc-800 rounded p-2 mt-1 whitespace-pre-wrap max-h-40 overflow-auto">{t.raw}</pre>
+   403→                    <details className="mt-1"><summary className="text-[10px] text-zinc-600 cursor-pointer">envelope sent</summary>
+   404→                      <pre className="text-[10px] text-zinc-500 bg-zinc-950 border border-zinc-800 rounded p-2 mt-1 whitespace-pre-wrap max-h-40 overflow-auto">{t.envelope}</pre>
+   405→                    </details>
+   406→                  </details>
+   407→                ))}
+   408→              </CardContent>
+   409→            </Card>
+   410→          </TabsContent>
+   411→
+   412→          {/* ─────────────── CONTROLS ─────────────── */}
+   413→          <TabsContent value="controls" className="space-y-4">
+   414→            <div className="grid md:grid-cols-2 gap-4">
+   415→              <Card className="bg-zinc-900 border-zinc-800">
+   416→                <CardHeader className="pb-2"><CardTitle className="text-base">Studio controls</CardTitle></CardHeader>
+   417→                <CardContent className="space-y-3">
+   418→                  <div className="flex gap-2 items-center">
+   419→                    <Input value={ownerDraft} onChange={(e) => setOwnerDraft(e.target.value)} placeholder="Owner name (the © holder)" className="bg-zinc-950 border-zinc-800" />
+   420→                    <Button size="sm" disabled={busy !== '' || !ownerDraft.trim()} onClick={() => act({ action: 'setOwner', owner: ownerDraft }, 'Owner renamed')}>Save</Button>
+   421→                  </div>
+   422→                  <div className="flex flex-wrap gap-2">
+   423→                    <Button size="sm" variant="outline" disabled={busy !== ''} onClick={() => act({ action: 'skip' }, 'Work day forced')}><Play className="h-3.5 w-3.5 mr-1" /> Skip ahead — force a work day</Button>
+   424→                    <Button size="sm" variant="outline" disabled={busy !== '' || !state.github.configured || forSale.length === 0} onClick={() => act({ action: 'pushGithub', siteId: 'all' }, 'Pushed to GitHub vaults')}><Github className="h-3.5 w-3.5 mr-1" /> Push all shelf sites to GitHub</Button>
+   425→                    <AlertDialog>
+   426→                      <AlertDialogTrigger asChild>
+   427→                        <Button size="sm" variant="destructive" disabled={busy !== ''}><Trash2 className="h-3.5 w-3.5 mr-1" /> Clear workspace</Button>
+   428→                      </AlertDialogTrigger>
+   429→                      <AlertDialogContent className="bg-zinc-900 border-zinc-800 text-zinc-100">
+   430→                        <AlertDialogHeader>
+   431→                          <AlertDialogTitle>Clear the whole studio?</AlertDialogTitle>
+   432→                          <AlertDialogDescription className="text-zinc-400">
+   433→                            Every site and its files are deleted. The ledger restarts empty. GitHub archives already pushed stay online.
+   434→                          </AlertDialogDescription>
+   435→                        </AlertDialogHeader>
+   436→                        <AlertDialogFooter>
+   437→                          <AlertDialogCancel className="bg-zinc-800 border-zinc-700">Keep everything</AlertDialogCancel>
+   438→                          <AlertDialogAction onClick={() => act({ action: 'clear' }, 'Workspace cleared')}>Clear it</AlertDialogAction>
+   439→                        </AlertDialogFooter>
+   440→                      </AlertDialogContent>
+   441→                    </AlertDialog>
+   442→                  </div>
+   443→                  {!state.github.configured && (
+   444→                    <p className="text-[11px] text-zinc-500 border border-zinc-800 rounded p-2">
+   445→                      <b>GitHub vault:</b> add <code>BEAST_GH_TOKEN</code> in the Render dashboard (Environment), then shelf sites publish to their own auto-named repo <code>beast-site-&lt;slug&gt;-&lt;seed6&gt;</code> in one commit.
+   446→                    </p>
+   447→                  )}
+   448→                </CardContent>
+   449→              </Card>
+   450→
+   451→              <Card className="bg-zinc-900 border-zinc-800">
+   452→                <CardHeader className="pb-2"><CardTitle className="text-base">Per-site controls</CardTitle></CardHeader>
+   453→                <CardContent className="space-y-2">
+   454→                  {state.sites.map((s) => (
+   455→                    <div key={s.id} className="flex items-center gap-2 flex-wrap text-xs border border-zinc-800 rounded p-2">
+   456→                      <span className="font-medium text-zinc-200">{s.brand}</span>
+   457→                      <Badge variant="outline" className={STATUS_STYLE[s.status]}>{s.status}</Badge>
+   458→                      <div className="ml-auto flex gap-1 flex-wrap">
+   459→                        <Button size="sm" variant="outline" disabled={busy !== '' || s.status !== 'in-studio'} onClick={() => act({ action: 'runTask', siteId: s.id }, `${s.brand}: task run`)}><Zap className="h-3 w-3 mr-1" /> Run next task</Button>
+   460→                        <Button size="sm" variant="outline" disabled={busy !== '' || s.status !== 'for-sale'} onClick={() => act({ action: 'pushGithub', siteId: s.id }, `${s.brand}: publish`)}><Github className="h-3 w-3 mr-1" /> Publish</Button>
+   461→                        <Dialog>
+   462→                          <DialogTrigger asChild>
+   463→                            <Button size="sm" variant="outline" onClick={() => openEditor(s.id)}><Pencil className="h-3 w-3 mr-1" /> Values</Button>
+   464→                          </DialogTrigger>
+   465→                          <DialogContent className="bg-zinc-900 border-zinc-800 text-zinc-100 max-w-2xl max-h-[85vh] overflow-auto">
+   466→                            <DialogHeader>
+   467→                              <DialogTitle>Edit values — {s.brand}</DialogTitle>
+   468→                            </DialogHeader>
+   469→                            {!values ? <p className="text-sm text-zinc-400 py-6">Loading values…</p> : (
+   470→                              <div className="space-y-3 text-sm">
+   471→                                <div className="grid grid-cols-2 gap-2">
+   472→                                  <label className="text-xs text-zinc-400">Brand<input className="mt-1 bg-zinc-950 border-zinc-800" value={v.brand ?? ''} onChange={(e) => setValues({ ...values, brand: e.target.value })} /></label>
+   473→                                  <label className="text-xs text-zinc-400">Tagline<input className="mt-1 bg-zinc-950 border-zinc-800" value={v.tagline ?? ''} onChange={(e) => setValues({ ...values, tagline: e.target.value })} /></label>
+   474→                                  <label className="text-xs text-zinc-400">Domain<input className="mt-1 bg-zinc-950 border-zinc-800" value={v.domain ?? ''} onChange={(e) => setValues({ ...values, domain: e.target.value })} /></label>
+   475→                                  <label className="text-xs text-zinc-400">Address<input className="mt-1 bg-zinc-950 border-zinc-800" value={v.address ?? ''} onChange={(e) => setValues({ ...values, address: e.target.value })} /></label>
+   476→                                </div>
+   477→                                <label className="text-xs text-zinc-400 block">Emails (comma-separated)<input className="mt-1 bg-zinc-950 border-zinc-800 w-full" value={(v.emails ?? []).join(', ')} onChange={(e) => setValues({ ...values, emails: e.target.value.split(',').map((x) => x.trim()).filter(Boolean) })} /></label>
+   478→                                <div>
+   479→                                  <div className="text-xs text-zinc-400 mb-1">Phone lines — max 12 ({(v.phones ?? []).length})</div>
+   480→                                  <div className="space-y-1">
+   481→                                    {(v.phones ?? []).map((p, i) => (
+   482→                                      <div key={i} className="flex gap-1">
+   483→                                        <Input className="bg-zinc-950 border-zinc-800 w-32" value={p.label} onChange={(e) => { const arr = [...(v.phones ?? [])]; arr[i] = { ...p, label: e.target.value }; setValues({ ...values, phones: arr }); }} />
+   484→                                        <Input className="bg-zinc-950 border-zinc-800 flex-1" value={p.number} onChange={(e) => { const arr = [...(v.phones ?? [])]; arr[i] = { ...p, number: e.target.value }; setValues({ ...values, phones: arr }); }} />
+   485→                                        <Button size="sm" variant="ghost" className="text-red-400 px-2" onClick={() => setValues({ ...values, phones: (v.phones ?? []).filter((_, j) => j !== i) })}><Trash2 className="h-3.5 w-3.5" /></Button>
+   486→                                      </div>
+   487→                                    ))}
+   488→                                  </div>
+   489→                                  <Button size="sm" variant="outline" className="mt-1" disabled={(v.phones ?? []).length >= 12} onClick={() => setValues({ ...values, phones: [...(v.phones ?? []), { label: 'New line', number: '+1 555 000 0000' }] })}>Add line</Button>
+   490→                                </div>
+   491→                                <div>
+   492→                                  <div className="text-xs text-zinc-400 mb-1">Social handles — {(v.socials ?? []).length} platforms</div>
+   493→                                  <div className="grid grid-cols-2 gap-1">
+   494→                                    {(v.socials ?? []).map((so, i) => (
+   495→                                      <div key={so.platform} className="flex items-center gap-1">
+   496→                                        <span className="text-[10px] w-16 text-zinc-500 shrink-0">{so.platform}</span>
+   497→                                        <Input className="bg-zinc-950 border-zinc-800 h-7 text-xs" value={so.handle} onChange={(e) => { const arr = [...(v.socials ?? [])]; arr[i] = { ...so, handle: e.target.value, url: socialUrlFor(so.platform, e.target.value) }; setValues({ ...values, socials: arr }); }} />
+   498→                                      </div>
+   499→                                    ))}
+   500→                                  </div>
+   501→                                </div>
+   502→                                <div>
+   503→                                  <div className="text-xs text-zinc-400 mb-1">Products — max 30 ({(v.products ?? []).length})</div>
+   504→                                  <ScrollArea className="h-40 border border-zinc-800 rounded p-2">
+   505→                                    <div className="space-y-1">
+   506→                                      {(v.products ?? []).map((p, i) => (
+   507→                                        <div key={i} className="flex gap-1 items-center">
+   508→                                          <Input className="bg-zinc-950 border-zinc-800 h-7 text-xs flex-1" value={p.name} onChange={(e) => { const arr = [...(v.products ?? [])]; arr[i] = { ...p, name: e.target.value }; setValues({ ...values, products: arr }); }} />
+   509→                                          <Input className="bg-zinc-950 border-zinc-800 h-7 text-xs w-20" type="number" step="0.01" value={p.price} onChange={(e) => { const arr = [...(v.products ?? [])]; arr[i] = { ...p, price: Number(e.target.value) }; setValues({ ...values, products: arr }); }} />
+   510→                                          <Button size="sm" variant="ghost" className="text-red-400 px-1.5" onClick={() => setValues({ ...values, products: (v.products ?? []).filter((_, j) => j !== i) })}><Trash2 className="h-3 w-3" /></Button>
+   511→                                        </div>
+   512→                                      ))}
+   513→                                    </div>
+   514→                                  </ScrollArea>
+   515→                                  <Button size="sm" variant="outline" className="mt-1" disabled={(v.products ?? []).length >= 30} onClick={() => setValues({ ...values, products: [...(v.products ?? []), { name: 'New product', desc: 'Made to order.', price: 10 }] })}>Add product</Button>
+   516→                                </div>
+   517→                                <Button className="w-full" disabled={busy !== ''} onClick={saveValues}><Send className="h-3.5 w-3.5 mr-1" /> {busy === 'Save values' ? 'Saving + re-rendering…' : 'Save — re-render every page'}</Button>
+   518→                              </div>
+   519→                            )}
+   520→                          </DialogContent>
+   521→                        </Dialog>
+   522→                      </div>
+   523→                    </div>
+   524→                  ))}
+   525→                </CardContent>
+   526→              </Card>
+   527→            </div>
+   528→          </TabsContent>
+   529→        </Tabs>
+   530→      </main>
+   531→      <footer className="border-t border-zinc-800 py-4 text-center text-[11px] text-zinc-600">
+   532→        Beast Web Developer v{state.version} — Mission Control · everything visible, everything controllable.
+   533→      </footer>
+   534→    </div>
+   535→  );
+   536→}
+   537→

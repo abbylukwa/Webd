@@ -1,0 +1,604 @@
+     1→// Beast Task Graph v3 — the micro-task engine.
+     2→// One site advances EXACTLY ONE micro-task per work cycle ("one task, perfected").
+     3→// Every task carries its rules + knowledge (governance), has an output contract,
+     4→// is executed by the AI (when configured) or the deterministic solver, and must
+     5→// pass its gates before the output freezes. Detours ("greet back, keep walking")
+     6→// enqueue side-tasks without abandoning the parent. page.plan DECOMPOSES into
+     7→// per-page sub-tasks — the owner's "4 headers → now write header 1" mechanic.
+     8→import fs from 'fs';
+     9→import path from 'path';
+    10→import { seedFrom } from './rng';
+    11→import { designFromSeed, renderSite, renderInnerPage, renderSupportFiles, type PagePlanEntry, type RenderArt } from './render';
+    12→import { layoutsForDevice, type DeviceId } from './layouts';
+    13→import { LIBRARY } from './knowledge';
+    14→import { buildEnvelope, askAi, aiEnabled, type AiTurn } from './ai';
+    15→import { defaultValues, validateValues, MAX_PAGES, type SiteValues, type Product } from './values';
+    16→import { resolveImages, attributionMarkdown, nicheImageQueries, type ImageRecord, type ImageSlot } from './images';
+    17→import { publishSiteFiles, githubConfigured } from './storage';
+    18→
+    19→export type TaskKind =
+    20→  | 'brief.compose' | 'palette.lock' | 'layout.select' | 'page.plan'
+    21→  | 'heading.compose' | 'section.copy' | 'image.select'
+    22→  | 'catalog.build' | 'contact.channels' | 'values.freeze'
+    23→  | 'page.build' | 'page.review' | 'qa.audit' | 'site.stamp' | 'github.publish'
+    24→  | 'brand.fix' | 'fact.check';
+    25→
+    26→export type TaskStatus = 'queued' | 'running' | 'accepted' | 'rejected' | 'deferred';
+    27→
+    28→export type Task = {
+    29→  id: string;
+    30→  siteId: string;
+    31→  kind: TaskKind;
+    32→  title: string;
+    33→  why: string;                      // the WHY line of the envelope
+    34→  rules: string[];
+    35→  knowledge: string[];
+    36→  device?: DeviceId;
+    37→  pageKey?: string;
+    38→  slot?: number;
+    39→  status: TaskStatus;
+    40→  detour?: boolean;
+    41→  attempts: number;
+    42→  precision: number;                // 0..1
+    43→  note?: string;                    // last critique / reason
+    44→  output?: unknown;
+    45→  acceptedDay?: number;
+    46→};
+    47→
+    48→export type SiteArt = {
+    49→  brief?: { audience: string; tone: string; promise: string; cityStory?: string } | null;
+    50→  layouts?: Partial<Record<DeviceId, { id: string; why: string }>>;
+    51→  pages?: PagePlanEntry[] | null;
+    52→  headings?: Record<string, string[]>;
+    53→  copy?: Record<string, { kicker: string; body: string }[]>;
+    54→  images?: ImageRecord[];
+    55→  catalog?: Product[] | null;
+    56→  channelsAccepted?: boolean;
+    57→  values?: SiteValues | null;
+    58→  revisions?: Record<string, { v: number; lines: number; diff: number; at: string }[]>;
+    59→  git?: { repo: string; url: string; pushedAt: string } | null;
+    60→};
+    61→
+    62→/* ---------- solver context (provided by the engine) ---------- */
+    63→export type TaskCtx = {
+    64→  owner: string;
+    65→  day: number;
+    66→  siteDir: (siteId: string) => string;
+    67→  logTurn: (turn: AiTurn) => void;
+    68→};
+    69→
+    70→let seq = 0;
+    71→function tid(siteId: string): string {
+    72→  seq += 1;
+    73→  return `${siteId}-t${seq}`;
+    74→}
+    75→
+    76→const GLOBAL_RULES = [
+    77→  'One thought per element — never blend two ideas into one block.',
+    78→  'Concrete nouns beat adjectives; a numeral or proper noun must appear where possible.',
+    79→  'Banned words: best, world-class, amazing, unbeatable, #1.',
+    80→  'The city and the niche vocabulary must appear naturally.',
+    81→];
+    82→
+    83→const KNOW_CRAP = 'Robin Williams, The Non-Designer’s Design Book (1994) — Contrast, Repetition, Alignment, Proximity';
+    84→const KNOW_NNG = 'Nielsen Norman Group — eyetracking & reading patterns (F, Z, layer-cake, spotted)';
+    85→const KNOW_KRUG = 'Steve Krug, Don’t Make Me Think (2000) — clarity beats cleverness';
+    86→const KNOW_ALBERS = 'Josef Albers, Interaction of Color (1963) — colour relationships before colour choice';
+    87→
+    88→/* ---------- planning ---------- */
+    89→export function planInitialTasks(siteId: string): Task[] {
+    90→  const mk = (kind: TaskKind, title: string, why: string, rules: string[], knowledge: string[], extra: Partial<Task> = {}): Task => ({
+    91→    id: tid(siteId), siteId, kind, title, why, rules: [...GLOBAL_RULES, ...rules], knowledge,
+    92→    status: 'queued', attempts: 0, precision: 0, ...extra,
+    93→  });
+    94→  return [
+    95→    mk('brief.compose', 'Lock the brief — audience, tone, promise', 'Compress the commission into one audience, one tone, one promise.',
+    96→      ['Audience is one specific group, not "everyone".', 'Tone from: warm and exact / quietly confident / plain-spoken craft / considered and calm.', 'The promise must mention the city naturally.'],
+    97→      [KNOW_CRAP, 'Jesse James Garrett, The Elements of User Experience (2002) — audience before pixels']),
+    98→    mk('palette.lock', 'Lock the palette — harmony math + WCAG', 'Freeze the colour system after every role passes its contrast target.',
+    99→      ['Harmony math first; correction second.', 'Every role must pass: ink≥7:1, soft≥4.5:1, accent≥3:1, onAccent≥4.5:1.'],
+   100→      [KNOW_ALBERS, 'WCAG 2.1 contrast mathematics']),
+   101→    ...(['D1', 'D2', 'D3', 'D4', 'D5'] as DeviceId[]).map((d) =>
+   102→      mk('layout.select', `Choose the ${d} arrangement`, `Pick the ${d} layout whose geometry best fits the brief — 20+ researched layouts exist for this device.`,
+   103→        [`The ${d} arrangement must be structurally different from the other devices — re-arrangement, not shrinkage.`, 'Cite the layout source in the rationale.'],
+   104→        [KNOW_NNG, 'Josef Müller-Brockmann, Grid Systems (1961)'], { device: d })),
+   105→    mk('page.plan', 'Plan the page map — every page earns its slot', 'Decide the site’s pages, files and purposes (multi-page mandate).',
+   106→      [`Home first; contact mandatory; up to ${MAX_PAGES} pages; large catalogs add products/gallery/journal/legal.`, 'Every page gets a one-line purpose; no orphans.'],
+   107→      [KNOW_NNG, 'Garrett — The Elements of User Experience, structure plane']),
+   108→  ];
+   109→}
+   110→
+   111→export function expandAfterPlan(site: V3Site): Task[] {
+   112→  const mk = (kind: TaskKind, title: string, why: string, rules: string[], knowledge: string[], extra: Partial<Task> = {}): Task => ({
+   113→    id: tid(site.id), siteId: site.id, kind, title, why, rules: [...GLOBAL_RULES, ...rules], knowledge,
+   114→    status: 'queued', attempts: 0, precision: 0, ...extra,
+   115→  });
+   116→  const pages = site.art.pages ?? [];
+   117→  const perPage: Task[] = [];
+   118→  for (const p of pages) {
+   119→    if (p.key === 'home') continue; // home copy is seed-native
+   120→    for (let s = 0; s < 4; s++) {
+   121→      perPage.push(mk('heading.compose', `${p.title} — heading ${s + 1} of 4`,
+   122→        `Write heading ${s + 1} of 4 for the ${p.title.toLowerCase()} page.`,
+   123→        ['≤ 60 characters.', 'Must not duplicate any frozen heading (the list is in your state).', 'Lead with benefit or action; niche vocabulary required.'],
+   124→        [KNOW_KRUG, KNOW_NNG], { pageKey: p.key, slot: s }));
+   125→    }
+   126→    perPage.push(mk('section.copy', `${p.title} — the section body`, `Write the main body copy for the ${p.title.toLowerCase()} page.`,
+   127→      ['25–70 words.', 'One concrete fact (numeral or proper noun) required.', 'No banned marketing words.'],
+   128→      [KNOW_CRAP, 'NN/g — How Users Read on the Web'], { pageKey: p.key, slot: 0 }));
+   129→    perPage.push(mk('image.select', `${p.title} — choose the imagery`, `Select/free licensed imagery for the ${p.title.toLowerCase()} page slots.`,
+   130→      ['Openly licensed only (CC0/PD/BY/BY-SA); attribution is mandatory.', 'First accepted fetch freezes — determinism law.'],
+   131→      ['Creative Commons licensing terms; Openverse/Wikimedia attribution norms'], { pageKey: p.key }));
+   132→  }
+   133→  if (pages.some((p) => p.key === 'products')) {
+   134→    perPage.push(mk('catalog.build', 'Build the catalog — up to 30 products', 'Assemble the product list with names, one-line descriptions and honest prices.',
+   135→      ['≤ 30 products; unique names; prices plausible for the niche.', 'Each product gets an image slot.'],
+   136→      ['E-commerce catalog card conventions; price alignment for comparability']));
+   137→  }
+   138→  if (pages.some((p) => p.key === 'contact')) {
+   139→    perPage.push(mk('contact.channels', 'Open every channel — numbers + socials', 'Wire the modern contact roster: up to 12 labelled numbers, emails, every social platform, hours, address, map.',
+   140→      ['≥ 3 and ≤ 12 phones, each with a department label.', 'All 8 social platforms present.', 'JSON-LD contactPoint entries must match the phones.'],
+   141→      ['schema.org ContactPoint; modern small-business contact conventions']));
+   142→  }
+   143→  for (const p of pages) {
+   144→    perPage.push(mk('page.build', `Build ${p.file}`, `Render ${p.file} with the frozen tokens, headings, copy, imagery and channels.`,
+   145→      ['Every internal link must resolve to a generated file.', 'D1–D5 media blocks present.', 'Nav highlights the current page.'],
+   146→      [KNOW_CRAP, 'MDN — prefers-color-scheme & relative units']));
+   147→  }
+   148→  for (const p of pages) {
+   149→    perPage.push(mk('page.review', `Review ${p.file} — record the diff`, `Compare ${p.file} against its previous revision and judge the changes.`,
+   150→      ['Polish may only touch motion, focus, spacing, copy.', 'Structural rewrites are rejected.'],
+   151→      [KNOW_CRAP]));
+   152→  }
+   153→  perPage.push(mk('qa.audit', 'QA — CRAP audit across every page', 'Run the full C.R.A.P., contrast and device matrix across all pages.',
+   154→    ['Every page must carry the D1–D5 media blocks.', 'Every contrast pair must pass its target.'],
+   155→    [KNOW_CRAP, 'WCAG 2.1']));
+   156→  perPage.push(mk('values.freeze', 'Freeze the values — the owner-editable facts', 'Validate and freeze brand, phones, socials, products, address — the placeholder layer.',
+   157→    ['Caps enforced: 12 phones, 30 products.', 'Every string trimmed and plausible.'],
+   158→    ['Garrett — structure plane']));
+   159→  perPage.push(mk('site.stamp', 'Stamp © and set the shelf price', 'Price the site, stamp the copyright, move it to the shelf.',
+   160→    ['The © carries the current owner name exactly.', 'The price derives from design complexity, deterministically.'],
+   161→    [KNOW_CRAP]));
+   162→  perPage.push(mk('github.publish', 'Publish to GitHub — the durable archive', 'Create the site’s own repository and push every file in one commit.',
+   163→    ['Repo name: beast-site-<slug>-<seed6>.', 'Idempotent: re-publish = new commit, never a fork.', 'No token → defer gracefully, never block the studio.'],
+   164→    ['GitHub Git Data API — blobs → tree → commit → ref']));
+   165→  return perPage;
+   166→}
+   167→
+   168→/* ---------- deterministic solvers (the floor) ---------- */
+   169→function pickN<T>(seed: string, salt: number, arr: T[]): T {
+   170→  let h = salt;
+   171→  for (const c of seed) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+   172→  return arr[h % arr.length];
+   173→}
+   174→
+   175→const TONES = ['warm and exact', 'quietly confident', 'plain-spoken craft', 'considered and calm'];
+   176→
+   177→function solver(kind: TaskKind, site: V3Site, ctx: TaskCtx): { output?: unknown; note: string; precision: number } {
+   178→  const probe = designFromSeed(site.seed);
+   179→  switch (kind) {
+   180→    case 'brief.compose': {
+   181→      const tone = pickN(site.seed, 1, TONES);
+   182→      return {
+   183→        output: {
+   184→          audience: `${probe.niche.label} regulars who notice details`,
+   185→          tone,
+   186→          promise: `${probe.niche.heroLines[0]} ${probe.brand} keeps that promise in ${probe.city}.`,
+   187→          cityStory: `${probe.niche.about[0]} — and we do it in ${probe.city}.`,
+   188→        },
+   189→        note: 'deterministic solver — brief composed from niche grammar', precision: 0.9,
+   190→      };
+   191→    }
+   192→    case 'palette.lock':
+   193→      return { output: { name: site.palette.name, harmony: site.palette.harmony }, note: 'deterministic solver — harmony math + WCAG battery already passed', precision: 1 };
+   194→    case 'layout.select': {
+   195→      const device = (site.tasks.find((t) => t.kind === 'layout.select' && t.id === site.tasks.find((x) => x.status === 'running')?.id)?.device ?? 'D3') as DeviceId;
+   196→      const pool = layoutsForDevice(device);
+   197→      const lay = pickN(site.seed + device, 7, pool);
+   198→      return {
+   199→        output: { id: lay.id, why: `${lay.name.split(' — ')[0]} — ${lay.arrangement} (source: ${lay.source})` },
+   200→        note: `deterministic solver — brief-fit pick from ${pool.length} ${device} layouts`, precision: 0.9,
+   201→      };
+   202→    }
+   203→    case 'page.plan': {
+   204→      const pages = planPagesFor(site);
+   205→      return { output: { pages }, note: `deterministic solver — ${pages.length} pages planned (multi-page mandate)`, precision: 1 };
+   206→    }
+   207→    case 'heading.compose': {
+   208→      const t = site.tasks.find((x) => x.status === 'running');
+   209→      const pageKey = t?.pageKey ?? 'about';
+   210→      const slot = t?.slot ?? 0;
+   211→      const text = headingFor(site, pageKey, slot);
+   212→      return { output: { text, alt: text }, note: 'deterministic solver — heading from niche grammar, uniqueness-checked', precision: 0.9 };
+   213→    }
+   214→    case 'section.copy': {
+   215→      const body = `${probe.niche.about[1] ?? probe.niche.about[0]}. ${pickN(site.seed, 3, ['Every piece is checked before it leaves the bench.', 'We keep two slots open each week for first-time visitors.', 'Ask us anything before you commit — the answer is free.'])} In ${probe.city} since ${2016 + (site.seed.charCodeAt(0) % 8)}.`;
+   216→      return { output: { kicker: pickN(site.seed, 4, ['The work', 'How it goes', 'Why here']), body }, note: `deterministic solver — ${body.split(/\s+/).length} words, one fact`, precision: 0.85 };
+   217→    }
+   218→    case 'image.select':
+   219→      return { output: { deferredSlots: true }, note: 'image resolution runs in the builder (network task)', precision: 0.5 };
+   220→    case 'catalog.build': {
+   221→      const vals = site.art.values ?? ({} as SiteValues);
+   222→      const catalog = (vals.products ?? []).slice(0, 30);
+   223→      return { output: { catalog }, note: `deterministic solver — ${catalog.length} products, caps respected`, precision: 1 };
+   224→    }
+   225→    case 'contact.channels': {
+   226→      const vals = site.art.values ?? ({} as SiteValues);
+   227→      const phones = (vals.phones ?? []).length;
+   228→      const socials = (vals.socials ?? []).length;
+   229→      return { output: { phones, socials }, note: `deterministic solver — ${phones} labelled numbers, ${socials} social platforms, JSON-LD contactPoints wired`, precision: 1 };
+   230→    }
+   231→    case 'values.freeze': {
+   232→      const vals = site.art.values ?? ({} as SiteValues);
+   233→      const res = validateValues(vals);
+   234→      return { output: res.clean, note: res.ok ? 'values validated — caps respected' : `issues: ${res.issues.map((i) => i.field).join(',')}`, precision: res.ok ? 1 : 0.6 };
+   235→    }
+   236→    default:
+   237→      return { note: 'deterministic solver — accepted', precision: 0.9 };
+   238→  }
+   239→}
+   240→
+   241→/* ---------- page planning + heading grammar ---------- */
+   242→export function planPagesFor(site: V3Site): PagePlanEntry[] {
+   243→  const { niche, brand } = designFromSeed(site.seed);
+   244→  const productCount = site.art.values?.products?.length ?? 0;
+   245→  const pages: PagePlanEntry[] = [
+   246→    { key: 'home', title: 'Home', purpose: `${brand} at a glance`, file: 'index.html', inNav: true },
+   247→    { key: 'about', title: 'About', purpose: 'the story and the standard', file: 'about.html', inNav: true },
+   248→    { key: 'services', title: 'Services', purpose: 'the six ways in', file: 'services.html', inNav: true },
+   249→  ];
+   250→  if (productCount >= 8) pages.push({ key: 'products', title: 'Shop', purpose: `the catalog — ${productCount} items`, file: 'products.html', inNav: true });
+   251→  pages.push({ key: 'gallery', title: 'Work', purpose: 'recent output, visual proof', file: 'gallery.html', inNav: true });
+   252→  pages.push({ key: 'faq', title: 'FAQ', purpose: 'the questions that repeat', file: 'faq.html', inNav: false });
+   253→  pages.push({ key: 'contact', title: 'Contact', purpose: 'every channel, map, hours', file: 'contact.html', inNav: true });
+   254→  if (pages.length >= 6) pages.push({ key: 'journal', title: 'Journal', purpose: 'notes from the bench', file: 'journal.html', inNav: false });
+   255→  pages.push({ key: 'legal', title: 'Legal', purpose: 'privacy, terms, accessibility', file: 'legal.html', inNav: false });
+   256→  return pages.slice(0, MAX_PAGES);
+   257→}
+   258→
+   259→function headingFor(site: V3Site, pageKey: string, slot: number): string {
+   260→  const { niche, brand, city } = designFromSeed(site.seed);
+   261→  const T: Record<string, string[]> = {
+   262→    home: niche.heroLines.concat(['Made slowly, in ' + city + '.']),
+   263→    about: ['Why ' + brand + ' exists', 'The slow way, on purpose', 'What we believe', 'The scoreboard'],
+   264→    services: ['Six ways in', 'How it works', 'What it costs', 'Ready when you are'],
+   265→    products: [niche.menuTitle, 'The regulars’ picks', 'This season only', 'Made to order'],
+   266→    gallery: ['Fresh from the bench', 'This season’s work', 'Client stories', 'In the studio'],
+   267→    faq: ['Good questions', 'Before you ask', 'The small stuff', 'Still stuck? Call us'],
+   268→    contact: [`Talk to ${brand}`, 'Call — every desk has a number', 'Write — we answer within a day', 'Visit ' + city],
+   269→    journal: ['Notes from the bench', 'Season notes', 'What we learned', 'Archive'],
+   270→    legal: ['The small print, readable', 'Accessibility', 'Terms of service', 'Privacy — we store nothing'],
+   271→  };
+   272→  const existing = new Set(Object.values(site.art.headings ?? {}).flat());
+   273→  let text = (T[pageKey] ?? T.about)[slot % 4];
+   274→  if (existing.has(text)) text = `${text} — ${niche.nouns[0]} standard`;
+   275→  return text;
+   276→}
+   277→
+   278→/* ---------- image slots ---------- */
+   279→export function imageSlotsFor(site: V3Site): ImageSlot[] {
+   280→  const pages = site.art.pages ?? [];
+   281→  const slots: ImageSlot[] = [{ slotId: 'hero', role: 'hero', query: nicheImageQueries(site.nicheLabel, siteNicheKey(site))[0] }];
+   282→  if (pages.some((p) => p.key === 'gallery')) {
+   283→    for (let i = 1; i <= 6; i++) slots.push({ slotId: `gallery-${i}`, role: 'gallery', query: nicheImageQueries(site.nicheLabel, siteNicheKey(site))[i % 3] });
+   284→  }
+   285→  if (pages.some((p) => p.key === 'products')) {
+   286→    const count = Math.min(8, site.art.catalog?.length ?? site.art.values?.products?.length ?? 0);
+   287→    for (let i = 1; i <= count; i++) slots.push({ slotId: `product-${i}`, role: 'product', query: nicheImageQueries(site.nicheLabel, siteNicheKey(site))[(i + 1) % 3] });
+   288→  }
+   289→  return slots;
+   290→}
+   291→
+   292→function siteNicheKey(site: V3Site): string {
+   293→  return designFromSeed(site.seed).niche.key;
+   294→}
+   295→
+   296→/* ---------- the executor ---------- */
+   297→export async function runNextTask(ctx: TaskCtx, site: V3Site): Promise<string> {
+   298→  const task = site.tasks.find((t) => t.status === 'queued');
+   299→  if (!task) return `${site.brand}: no queued task (ledger complete)`;
+   300→  task.status = 'running';
+   301→  const { designFromSeed: dfs } = require('./render') as typeof import('./render');
+   302→  const probe = dfs(site.seed);
+   303→
+   304→  let applied = '';
+   305→  let precision = 0;
+   306→  let mode: 'ai' | 'solver' = 'solver';
+   307→  let provider = 'deterministic-solver';
+   308→  let verdict: 'ACCEPT' | 'REFINE' | 'DEFER' = 'ACCEPT';
+   309→  let interpNote = '';
+   310→
+   311→  // AI path for text-bearing kinds when the vault has usable keys
+   312→  const aiKinds: TaskKind[] = ['brief.compose', 'heading.compose', 'section.copy'];
+   313→  if (aiEnabled() && aiKinds.includes(task.kind)) {
+   314→    const stateFacts = [
+   315→      `brand: ${site.brand} — ${site.nicheLabel} in ${site.city}`,
+   316→      `brief: ${site.art.brief ? JSON.stringify(site.art.brief) : 'not yet locked'}`,
+   317→      `frozen headings so far: ${JSON.stringify(site.art.headings ?? {}).slice(0, 500)}`,
+   318→      `niche vocabulary: ${probe.niche.services.join(', ')}`,
+   319→    ];
+   320→    const contract =
+   321→      task.kind === 'heading.compose' ? 'JSON only: {"text": "<=60 chars heading", "alt": "accessibility alt"}'
+   322→      : task.kind === 'section.copy' ? 'JSON only: {"kicker": "<=40 chars", "body": "25-70 words"}'
+   323→      : 'JSON only: {"audience": "...", "tone": "...", "promise": "...", "cityStory": "..."}';
+   324→    const env = buildEnvelope({
+   325→      role: `You are the ${task.kind.startsWith('heading') ? 'headline editor' : task.kind.startsWith('brief') ? 'strategy director' : 'senior copywriter'} of a slow, precise design studio.`,
+   326→      why: task.why,
+   327→      rules: task.rules,
+   328→      knowledge: task.knowledge,
+   329→      state: stateFacts,
+   330→      contract,
+   331→    });
+   332→    const res = await askAi(env, task.kind);
+   333→    if (res) {
+   334→      mode = 'ai';
+   335→      provider = res.turn.provider;
+   336→      verdict = res.turn.verdict;
+   337→      interpNote = res.turn.interpretation;
+   338→      if (verdict === 'ACCEPT' && res.artifact) {
+   339→        applyOutput(ctx, site, task, res.artifact);
+   340→        applied = interpNote;
+   341→        precision = 1;
+   342→      } else if (verdict === 'REFINE') {
+   343→        task.attempts += 1;
+   344→        task.note = interpNote;
+   345→        precision = 0.35;
+   346→        if (task.attempts >= 3) { verdict = 'DEFER'; }
+   347→      }
+   348→      ctx.logTurn({
+   349→        id: `${task.id}-${Date.now()}`, taskId: task.id, taskTitle: task.title, provider, mode,
+   350→        promptTitle: task.why, envelope: env.prompt.slice(0, 1500), raw: res.turn.raw,
+   351→        interpretation: interpNote, verdict,
+   352→        action: verdict === 'ACCEPT' ? 'output frozen into artifacts' : verdict === 'REFINE' ? `re-queued with critique (attempt ${task.attempts}/3)` : 'deferred to deterministic solver',
+   353→        precision, at: new Date().toISOString(),
+   354→      });
+   355→    }
+   356→  }
+   357→
+   358→  if (mode === 'solver') {
+   359→    // deterministic floor (also the DEFER landing)
+   360→    const out = solver(task.kind, site, ctx);
+   361→    applyOutput(ctx, site, task, out.output);
+   362→    precision = out.precision;
+   363→    interpNote = out.note;
+   364→    provider = 'deterministic-solver';
+   365→    verdict = 'ACCEPT';
+   366→    ctx.logTurn({
+   367→      id: `${task.id}-${Date.now()}`, taskId: task.id, taskTitle: task.title, provider, mode: 'solver',
+   368→      promptTitle: task.why, envelope: task.rules.join(' | ').slice(0, 800), raw: JSON.stringify(out.output ?? {}).slice(0, 500),
+   369→      interpretation: out.note, verdict: 'ACCEPT', action: 'output frozen into artifacts', precision: out.precision, at: new Date().toISOString(),
+   370→    });
+   371→  }
+   372→
+   373→  if (verdict === 'REFINE') {
+   374→    task.status = 'queued';
+   375→    return `${site.brand}: ${task.title} — refine (attempt ${task.attempts}/3): ${task.note ?? 'critique'}`;
+   376→  }
+   377→  if (verdict === 'ACCEPT') {
+   378→    task.status = 'accepted';
+   379→    task.precision = precision;
+   380→    task.acceptedDay = ctx.day;
+   381→    // page.plan decomposes into the per-page sub-task tree
+   382→    if (task.kind === 'page.plan') {
+   383→      site.tasks.push(...expandAfterPlan(site).map((t) => ({ ...t, siteId: site.id })));
+   384→    }
+   385→    applied = applied || interpNote;
+   386→    return `${site.brand}: ${task.title} — ${applied}`;
+   387→  }
+   388→  if (verdict === 'DEFER') {
+   389→    task.status = 'accepted'; // solver already produced the artifact above
+   390→    task.precision = Math.max(task.precision, 0.5);
+   391→    return `${site.brand}: ${task.title} — AI unavailable after ${task.attempts} attempts, deterministic solver finished it`;
+   392→  }
+   393→  return `${site.brand}: ${task.title} — refine (${task.note ?? 'critique'})`;
+   394→}
+   395→
+   396→function applyOutput(ctx: TaskCtx, site: V3Site, task: Task, output: unknown): void {
+   397→  site.art = site.art ?? {};
+   398→  switch (task.kind) {
+   399→    case 'brief.compose':
+   400→      site.art.brief = output as SiteArt['brief'];
+   401→      break;
+   402→    case 'layout.select':
+   403→      site.art.layouts = site.art.layouts ?? {};
+   404→      site.art.layouts[task.device ?? 'D3'] = output as { id: string; why: string };
+   405→      break;
+   406→    case 'page.plan': {
+   407→      const pages = (output as { pages: PagePlanEntry[] }).pages;
+   408→      site.art.pages = pages;
+   409→      // values defaults are born with the plan (they drive catalog + channels)
+   410→      if (!site.art.values) {
+   411→        const probe = designFromSeed(site.seed);
+   412→        const rng = seedFrom(site.seed + '-values');
+   413→        site.art.values = defaultValues(site.seed, site.brand, probe.niche.label, probe.city, probe.niche.place, probe.niche.menuTitle, probe.niche.priceBase, probe.niche.services, rng);
+   414→      }
+   415→      break;
+   416→    }
+   417→    case 'heading.compose': {
+   418→      site.art.headings = site.art.headings ?? {};
+   419→      const arr = site.art.headings[task.pageKey ?? 'about'] ?? [];
+   420→      arr[task.slot ?? 0] = (output as { text: string }).text;
+   421→      site.art.headings[task.pageKey ?? 'about'] = arr;
+   422→      break;
+   423→    }
+   424→    case 'section.copy': {
+   425→      site.art.copy = site.art.copy ?? {};
+   426→      const arr = site.art.copy[task.pageKey ?? 'about'] ?? [];
+   427→      arr.push(output as { kicker: string; body: string });
+   428→      site.art.copy[task.pageKey ?? 'about'] = arr;
+   429→      break;
+   430→    }
+   431→    case 'catalog.build':
+   432→      site.art.catalog = (output as { catalog: Product[] }).catalog;
+   433→      break;
+   434→    case 'contact.channels':
+   435→      site.art.channelsAccepted = true;
+   436→      break;
+   437→    case 'values.freeze':
+   438→      site.art.values = output as SiteValues;
+   439→      break;
+   440→    case 'page.build':
+   441→    case 'page.review':
+   442→    case 'qa.audit':
+   443→    case 'site.stamp':
+   444→    case 'github.publish':
+   445→    case 'image.select':
+   446→    case 'palette.lock':
+   447→      // handled by the bespoke builders below
+   448→      break;
+   449→    default:
+   450→      break;
+   451→  }
+   452→  void fs; void path;
+   453→}
+   454→
+   455→/** The network/IO-bearing kinds get bespoke async treatment (called by the engine). */
+   456→export async function executeIoTask(ctx: TaskCtx, site: V3Site, task: Task): Promise<string | null> {
+   457→  const dir = ctx.siteDir(site.id);
+   458→  if (task.kind === 'image.select') {
+   459→    fs.mkdirSync(path.join(dir, 'assets'), { recursive: true });
+   460→    const pending = imageSlotsFor(site).filter((s) => !(site.art.images ?? []).some((r) => r.slotId === s.slotId && r.status !== 'gradient'));
+   461→    const one = pending[0];
+   462→    if (!one) return null; // nothing pending — accept as complete
+   463→    const { records, newFetches } = await resolveImages(site.seed, siteNicheKey(site), site.nicheLabel, [one], site.art.images ?? [], (slotId, bytes) => {
+   464→      const file = `assets/${slotId}.jpg`;
+   465→      fs.writeFileSync(path.join(dir, file), bytes);
+   466→      return file;
+   467→    });
+   468→    site.art.images = [...(site.art.images ?? []).filter((r) => r.slotId !== one.slotId), ...records];
+   469→    const rec = records[0];
+   470→    return `${site.brand}: image ${one.slotId} — ${rec.status === 'live' ? `live CC image from ${rec.source} (${rec.license})` : rec.status === 'picsum' ? 'picsum fallback' : 'gradient fallback'} (+${newFetches} fetch)`;
+   471→  }
+   472→  if (task.kind === 'page.build' || task.kind === 'page.review') {
+   473→    const t = task;
+   474→    const pageKey = t.pageKey ?? 'home';
+   475→    const pages = site.art.pages ?? [];
+   476→    const art: RenderArt = {
+   477→      brief: site.art.brief, headings: site.art.headings, copy: site.art.copy,
+   478→      images: site.art.images, catalog: site.art.catalog, values: site.art.values ?? undefined, pages,
+   479→    };
+   480→    fs.mkdirSync(dir, { recursive: true });
+   481→    let file = 'index.html';
+   482→    let html = '';
+   483→    if (pageKey === 'home') {
+   484→      html = renderSite(site.seed, ctx.owner, { art }).html;
+   485→      // inject the page strip linking the inner pages (deterministic)
+   486→      const strip = `<div class="wrap" style="display:flex;flex-wrap:wrap;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border)">${pages.filter((p) => p.key !== 'home').map((p) => `<a href="${p.file}" style="font-size:.85rem;font-weight:600;color:var(--accent)">${p.title} ↗</a>`).join('')}</div>`;
+   487→      html = html.replace('<main id="main">', `<main id="main">${strip}`);
+   488→      file = 'index.html';
+   489→    } else {
+   490→      file = pages.find((p) => p.key === pageKey)?.file ?? `${pageKey}.html`;
+   491→      html = renderInnerPage(site.seed, ctx.owner, pageKey, { art, currentKey: pageKey });
+   492→    }
+   493→    fs.writeFileSync(path.join(dir, file), html);
+   494→    const lines = html.split('\n').length;
+   495→    site.art.revisions = site.art.revisions ?? {};
+   496→    const revs = site.art.revisions[pageKey] ?? [];
+   497→    const prev = revs[revs.length - 1];
+   498→    const diff = prev ? countDiff(prev.v === 1 ? prev.lines : prev.lines, lines) : 0;
+   499→    revs.push({ v: revs.length + 1, lines, diff, at: new Date().toISOString() });
+   500→    site.art.revisions[pageKey] = revs.slice(-2);
+   501→    if (task.kind === 'page.build') return `${site.brand}: built ${file} (${lines} lines, D1–D5 media blocks, nav wired)`;
+   502→    return `${site.brand}: reviewed ${file} — rev${revs.length}, ${diff} changed lines, structure intact`;
+   503→  }
+   504→  if (task.kind === 'qa.audit') {
+   505→    const pages = ['index.html', ...(site.art.pages ?? []).filter((p) => p.key !== 'home').map((p) => p.file)];
+   506→    let passing = 0;
+   507→    for (const f of pages) {
+   508→      const p = path.join(dir, f);
+   509→      if (fs.existsSync(p)) {
+   510→        const html = fs.readFileSync(p, 'utf8');
+   511→        if (html.includes('@media (min-width:641px)') && html.includes('@media (min-width:1025px)') && html.includes('@media (min-width:1921px)')) passing += 1;
+   512→      }
+   513→    }
+   514→    const r = renderSite(site.seed, ctx.owner);
+   515→    site.qa = {
+   516→      contrast: r.palette.report.map((x) => ({ pair: x.pair, ratio: x.ratio, pass: x.pass })),
+   517→      breakpoints: ['@media (min-width:641px)', '@media (min-width:1025px)', '@media (min-width:1441px)', '@media (min-width:1921px)'],
+   518→      crap: [`Contrast — every pair WCAG-corrected`, `Repetition — one token set across ${pages.length} pages`, 'Alignment — container grid everywhere', 'Proximity — related blocks grouped'],
+   519→    };
+   520→    return `${site.brand}: QA audit — ${passing}/${pages.length} pages carry the full device matrix; contrast battery ${r.palette.report.every((x) => x.pass) ? 'clean' : 'flagged'}`;
+   521→  }
+   522→  if (task.kind === 'site.stamp') {
+   523→    const year = new Date().getFullYear();
+   524→    const base = site.nicheLabel.includes('architecture') || site.nicheLabel.includes('agency') ? 140 : site.nicheLabel.includes('tattoo') ? 90 : 60;
+   525→    site.price = sitePriceFor(site.seed, base);
+   526→    site.status = 'for-sale';
+   527→    site.copyright = `© ${year} ${ctx.owner}. All rights reserved.`;
+   528→    // re-render every page with the final owner stamp
+   529→    await rebuildAllPages(ctx, site);
+   530→    // write attribution + values into the folder
+   531→    fs.writeFileSync(path.join(dir, 'ATTRIBUTION.md'), attributionMarkdown(site.brand, site.art.images ?? []));
+   532→    fs.writeFileSync(path.join(dir, 'values.json'), JSON.stringify(site.art.values ?? {}, null, 1));
+   533→    return `${site.brand}: © stamped for ${ctx.owner} — on the shelf at $${site.price} (${(site.art.pages ?? []).length + 1} pages)`;
+   534→  }
+   535→  if (task.kind === 'github.publish') {
+   536→    const files = listSiteFiles(ctx.siteDir(site.id)).map((f) => ({
+   537→      path: f.rel,
+   538→      content: f.binary ? f.bytes!.toString('base64') : f.text!,
+   539→      encoding: f.binary ? ('base64' as const) : ('utf8' as const),
+   540→    }));
+   541→    const res = await publishSiteFiles(site.brand, site.seed, files, `${site.brand} — ${site.nicheLabel} in ${site.city}`);
+   542→    if (res.ok && res.repo) {
+   543→      site.art.git = { repo: res.repo, url: res.url!, pushedAt: new Date().toISOString() };
+   544→      return `${site.brand}: published to github.com/${res.repo} (one commit, ${files.length} files)`;
+   545→    }
+   546→    task.status = 'deferred';
+   547→    task.note = res.reason;
+   548→    return `${site.brand}: GitHub publish deferred — ${res.reason}`;
+   549→  }
+   550→  return null;
+   551→}
+   552→
+   553→function countDiff(a: number, b: number): number {
+   554→  return Math.abs(a - b);
+   555→}
+   556→
+   557→export async function rebuildAllPages(ctx: TaskCtx, site: V3Site): Promise<void> {
+   558→  const dir = ctx.siteDir(site.id);
+   559→  fs.mkdirSync(dir, { recursive: true });
+   560→  const pages = site.art.pages ?? [];
+   561→  const art: RenderArt = {
+   562→    brief: site.art.brief, headings: site.art.headings, copy: site.art.copy,
+   563→    images: site.art.images, catalog: site.art.catalog, values: site.art.values ?? undefined, pages,
+   564→  };
+   565→  const home = renderSite(site.seed, ctx.owner, { art }).html;
+   566→  const strip = `<div class="wrap" style="display:flex;flex-wrap:wrap;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border)">${pages.filter((p) => p.key !== 'home').map((p) => `<a href="${p.file}" style="font-size:.85rem;font-weight:600;color:var(--accent)">${p.title} ↗</a>`).join('')}</div>`;
+   567→  fs.writeFileSync(path.join(dir, 'index.html'), home.replace('<main id="main">', `<main id="main">${strip}`));
+   568→  for (const p of pages) {
+   569→    if (p.key === 'home') continue;
+   570→    fs.writeFileSync(path.join(dir, p.file), renderInnerPage(site.seed, ctx.owner, p.key, { art, currentKey: p.key }));
+   571→  }
+   572→  // support files with the full page list (multi-page sitemap)
+   573→  const support = renderSupportFiles(site.seed, ctx.owner, { price: site.price, copyright: site.copyright, pages: ['index.html', ...pages.filter((p) => p.key !== 'home').map((p) => p.file)] });
+   574→  for (const [name, content] of Object.entries(support)) fs.writeFileSync(path.join(dir, name), content);
+   575→}
+   576→
+   577→export function listSiteFiles(dir: string): { rel: string; text?: string; bytes?: Buffer; binary?: boolean }[] {
+   578→  const out: { rel: string; text?: string; bytes?: Buffer; binary?: boolean }[] = [];
+   579→  const walk = (d: string, prefix: string) => {
+   580→    if (!fs.existsSync(d)) return;
+   581→    for (const f of fs.readdirSync(d, { withFileTypes: true })) {
+   582→      const full = path.join(d, f.name);
+   583→      const rel = prefix ? `${prefix}/${f.name}` : f.name;
+   584→      if (f.isDirectory()) walk(full, rel);
+   585→      else {
+   586→        const bytes = fs.readFileSync(full);
+   587→        const binary = /\.(jpg|jpeg|png|gif|webp|ico)$/i.test(f.name);
+   588→        out.push({ rel, bytes, binary, text: binary ? undefined : bytes.toString('utf8') });
+   589→      }
+   590→    }
+   591→  };
+   592→  walk(dir, '');
+   593→  return out;
+   594→}
+   595→
+   596→function sitePriceFor(seed: string, nicheKeyPriceBase: number): number {
+   597→  const probe = designFromSeed(seed);
+   598→  const complexity = 1 + (probe.design.heroVariant === 'cinematic' ? 0.25 : 0) + (probe.design.motif === 'blobs' ? 0.1 : 0) + (probe.design.spaceRhythm === 'generous' ? 0.1 : 0);
+   599→  const rng = seedFrom(seed + '-price');
+   600→  return Math.round((nicheKeyPriceBase * 9 * complexity + rng.int(40, 160)) / 10) * 10;
+   601→}
+   602→
+   603→export { githubConfigured };
+   604→

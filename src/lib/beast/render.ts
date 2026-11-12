@@ -297,10 +297,12 @@ function brandSlug(brand: string): string {
 
 /* ---------- render ---------- */
 export function renderSite(seed: string, owner: string, opts?: { art?: RenderArt }): RenderedSite {
-  const { rng, niche, brand, city, design, palette } = designFromSeed(seed);
+  const { rng, niche, brand: seedBrand, city, design, palette } = designFromSeed(seed);
   const dk = palette.theme === 'dark' ? null : deriveDarkTokens(palette);
   const year = new Date().getFullYear();
   const vals = opts?.art?.values;
+  // the values layer wins: an owner-edited brand replaces the seed-born one
+  const brand = vals?.brand?.trim() ? vals.brand.trim() : seedBrand;
   const email = vals?.emails?.[0] ?? `hello@${brandSlug(brand)}`;
   const phone = vals?.phones?.[0]?.number ?? `+1 (${rng.int(200, 989)}) ${rng.int(200, 989)}-${rng.int(1000, 9999)}`;
   const extraPhones = (vals?.phones ?? []).slice(1, 12);
@@ -595,11 +597,13 @@ function contactPoints(values: SiteValues): string {
 
 /** Inner pages share the home CSS tokens, nav skeleton and footer (Repetition). */
 export function renderInnerPage(seed: string, owner: string, kind: string, opts: InnerPageOpts): string {
-  const { brand, niche, city, design, palette } = designFromSeed(seed);
+  const { brand: seedBrand, niche, city, design, palette } = designFromSeed(seed);
   const dk = palette.theme === 'dark' ? null : deriveDarkTokens(palette);
   const year = new Date().getFullYear();
   const art = opts.art;
   const v: SiteValues = art.values ?? ({} as SiteValues);
+  // the values layer wins: an owner-edited brand replaces the seed-born one
+  const brand = v.brand?.trim() ? v.brand.trim() : seedBrand;
   const pages = art.pages ?? [];
   const email = v.emails?.[0] ?? `hello@${brandSlug(brand)}`;
   const primaryPhone = v.phones?.[0]?.number ?? '+1 (000) 000-0000';

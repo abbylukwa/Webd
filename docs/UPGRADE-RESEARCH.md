@@ -257,3 +257,24 @@ idempotent publish), fresh-start (no placeholder sites on v3 boot).
 - NN/g eyetracking & reading patterns; Material Design responsive grid;
   MDN grid layout; Setproduct bento; Müller-Brockmann; Williams C.R.A.P.;
   WCAG 2.1 — carried over from the v2 research dossier (beast-research/).
+
+---
+
+## 9 · Per-task deep-dive dossier (docs/research/)
+
+Every upgrade task gets its own research file — findings, design, interlinks,
+verification:
+
+1. `01-micro-task-graph.md` — the atomic task graph, one-task-per-day law, detours
+2. `02-layout-library.md` — 112 layouts, 20+ per device, cited sources
+3. `03-values-limits.md` — the values layer; 12 phones / 30 products / 8 socials caps
+4. `04-multipage-contact.md` — the multi-page mandate and contact realism
+5. `05-media-pipeline.md` — Openverse → Wikimedia → Picsum → gradient, attribution
+6. `06-governed-ai.md` — envelope, contract gates, verdict machine, key pool
+7. `07-github-storage.md` — **the database answer: NO**; Git Data API archive; media limits
+8. `08-mission-control.md` — the huge panel: progress / difference / precisions / AI answers + codebook
+9. `09-fresh-start-verification.md` — placeholder purge, warm-up opt-in, 39-check regime
+
+**Verification status:** 39/39 feature checks green (local + in-app Test Center),
+production build clean, standalone boot test green. Live verification: run
+`/api/beast/test` on the deployed URL — it must print 39 pass / 0 fail.

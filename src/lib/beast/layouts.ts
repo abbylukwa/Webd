@@ -46,7 +46,8 @@ export type HeroMode =
   | "bento" // headline is the 2×2 cell of a bento grid
   | "mono" // full-bleed dark statement, edge to edge
   | "gallery" // headline + immediate card wall peek
-  | "showcase"; // copy left / framed artifact right
+  | "showcase" // copy left / framed artifact right
+  | "marquee"; // repeating/oversized scrolling type band
 
 export type SectionKey = "hero" | "stats" | "features" | "story" | "voices" | "cta" | "contact";
 

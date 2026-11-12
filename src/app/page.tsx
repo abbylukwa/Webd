@@ -16,7 +16,7 @@ import { LAYOUTS, specSummary } from '@/lib/beast/layouts';
 import { LIBRARY } from '@/lib/beast/knowledge';
 import {
   Download, Trash2, Eye, FastForward, Package, Github, Keyboard, Ruler, Palette as PaletteIcon,
-  Layers, Infinity as InfinityIcon, BookOpen, ShieldCheck, MonitorSmartphone, FlaskConical,
+  Layers, Infinity as InfinityIcon, BookOpen, ShieldCheck, MonitorSmartphone, FlaskConical, Gauge,
 } from 'lucide-react';
 
 /* ---------- types (mirror of API) ---------- */
@@ -264,6 +264,11 @@ export default function BeastPage() {
             <Button size="sm" variant="outline" className="border-zinc-700 hover:bg-zinc-800" disabled={busy} onClick={() => act({ action: 'skip' }, 'One more work day done — no rush.')}>
               <FastForward className="h-4 w-4" /> <span className="hidden md:inline">Force work day</span>
             </Button>
+            <a href="/control" className="inline-flex">
+              <Button size="sm" variant="outline" className="border-amber-800 bg-amber-950/40 font-semibold text-amber-300 hover:bg-amber-900/40">
+                <Gauge className="h-4 w-4" /> <span className="hidden md:inline">Mission Control</span>
+              </Button>
+            </a>
             <Button size="sm" className="bg-lime-300 font-bold text-zinc-950 hover:bg-lime-200" disabled={!shelf.length} onClick={() => { window.location.href = '/api/beast/zip-all'; toast({ title: 'Workspace packed — download started' }); }}>
               <Package className="h-4 w-4" /> <span className="hidden md:inline">Download all</span>
             </Button>

@@ -15,6 +15,10 @@ import { buildEnvelope, askAi, aiEnabled, type AiTurn } from './ai';
 import { defaultValues, validateValues, MAX_PAGES, type SiteValues, type Product } from './values';
 import { resolveImages, attributionMarkdown, nicheImageQueries, type ImageRecord, type ImageSlot } from './images';
 import { publishSiteFiles, githubConfigured } from './storage';
+import type { BeastSite } from './engine';
+
+/** A site as the task graph sees it — the engine's BeastSite. */
+type V3Site = BeastSite;
 
 export type TaskKind =
   | 'brief.compose' | 'palette.lock' | 'layout.select' | 'page.plan'
@@ -201,6 +205,13 @@ function solver(kind: TaskKind, site: V3Site, ctx: TaskCtx): { output?: unknown;
       };
     }
     case 'page.plan': {
+      // the values defaults are born BEFORE the map is drawn, so the catalog
+      // size can earn the Shop page deterministically
+      if (!site.art.values) {
+        const probe = designFromSeed(site.seed);
+        const rng = seedFrom(site.seed + '-values');
+        site.art.values = defaultValues(site.seed, site.brand, probe.niche.label, probe.city, probe.niche.place, probe.niche.menuTitle, probe.niche.priceBase, probe.niche.services, rng);
+      }
       const pages = planPagesFor(site);
       return { output: { pages }, note: `deterministic solver — ${pages.length} pages planned (multi-page mandate)`, precision: 1 };
     }
@@ -475,7 +486,7 @@ export async function executeIoTask(ctx: TaskCtx, site: V3Site, task: Task): Pro
     const pages = site.art.pages ?? [];
     const art: RenderArt = {
       brief: site.art.brief, headings: site.art.headings, copy: site.art.copy,
-      images: site.art.images, catalog: site.art.catalog, values: site.art.values ?? undefined, pages,
+      images: site.art.images, catalog: site.art.catalog ?? undefined, values: site.art.values ?? undefined, pages,
     };
     fs.mkdirSync(dir, { recursive: true });
     let file = 'index.html';
@@ -560,7 +571,7 @@ export async function rebuildAllPages(ctx: TaskCtx, site: V3Site): Promise<void>
   const pages = site.art.pages ?? [];
   const art: RenderArt = {
     brief: site.art.brief, headings: site.art.headings, copy: site.art.copy,
-    images: site.art.images, catalog: site.art.catalog, values: site.art.values ?? undefined, pages,
+    images: site.art.images, catalog: site.art.catalog ?? undefined, values: site.art.values ?? undefined, pages,
   };
   const home = renderSite(site.seed, ctx.owner, { art }).html;
   const strip = `<div class="wrap" style="display:flex;flex-wrap:wrap;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border)">${pages.filter((p) => p.key !== 'home').map((p) => `<a href="${p.file}" style="font-size:.85rem;font-weight:600;color:var(--accent)">${p.title} ↗</a>`).join('')}</div>`;

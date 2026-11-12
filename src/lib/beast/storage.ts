@@ -139,6 +139,41 @@ export function siteRepoName(brand: string, seed: string): string {
   return `beast-site-${slug}-${seed.slice(0, 6)}`;
 }
 
+export const VAULT_REPO = 'beast-studio-vault';
+
+/* ---------- studio state snapshot (progress survives deploys) ---------- */
+
+/** Push the whole studio state (day counter, ledger, transcript) as one file. */
+export async function pushStudioState(stateJson: string): Promise<PublishResult> {
+  if (!githubConfigured()) return { ok: false, deferred: true, reason: 'BEAST_GH_TOKEN not set — studio state stays local-only.' };
+  const repo = await ensureRepo(VAULT_REPO, 'Beast Web Developer — studio state vault (auto-created).');
+  if (!repo.ok || !repo.fullName) return { ok: false, reason: repo.reason };
+  // single-file commit via the Contents API (PUT = create or update)
+  const { status, data } = await gh<{ content?: { sha?: string } }>(`/repos/${repo.fullName}/contents/beast-state.json`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      message: `state snapshot — day update (${new Date().toISOString().slice(0, 10)})`,
+      content: Buffer.from(stateJson, 'utf8').toString('base64'),
+    }),
+  });
+  if (status !== 200 && status !== 201) return { ok: false, reason: `contents-${status}` };
+  return { ok: true, repo: repo.fullName, url: `https://github.com/${repo.fullName}` };
+}
+
+/** Fetch the vaulted studio state, or null when absent/unreachable. */
+export async function loadStudioState(): Promise<string | null> {
+  if (!githubConfigured()) return null;
+  const owner = await ghOwner();
+  if (!owner) return null;
+  const { status, data } = await gh<{ content?: string; encoding?: string }>(`/repos/${owner}/${VAULT_REPO}/contents/beast-state.json`);
+  if (status !== 200 || !data?.content) return null;
+  try {
+    return Buffer.from(data.content, 'base64').toString('utf8');
+  } catch {
+    return null;
+  }
+}
+
 export type PublishResult = { ok: boolean; deferred?: boolean; reason?: string; repo?: string; url?: string; commitUrl?: string };
 
 /** Publish a whole site folder (files already in memory) to its own repo. */
