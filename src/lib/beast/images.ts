@@ -19,7 +19,7 @@ export type ImageRecord = {
 export type ImageSlot = { slotId: string; role: 'hero' | 'gallery' | 'product'; query: string };
 
 const TIMEOUT = 9_000;
-const UA = 'BeastWebDeveloper/3.0 (autonomous design studio; image fetcher)';
+const UA = 'BeastWebDeveloper/4.0 (autonomous design studio; image fetcher)';
 
 async function timedFetch(url: string, init?: RequestInit): Promise<Response | null> {
   try {

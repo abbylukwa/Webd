@@ -1,5 +1,0 @@
-# robots.txt — The Sage Still
-User-agent: *
-Allow: /
-
-Sitemap: https://thesagestill.site/sitemap.xml

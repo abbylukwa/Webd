@@ -9,7 +9,7 @@ export async function GET() {
   return new NextResponse(new Uint8Array(buf), {
     headers: {
       'Content-Type': 'application/zip',
-      'Content-Disposition': `attachment; filename="beast-workspace-day-${state.day}.zip"`,
+      'Content-Disposition': `attachment; filename="beast-workspace-cycle-${state.cycle}.zip"`,
       'Cache-Control': 'no-store',
     },
   });

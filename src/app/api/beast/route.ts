@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  loadState, tick, forceDay, clearWorkspace, setOwner, runTaskNow, setValues, pushToGithub, adoptVaultState,
+  loadState, bootStudio, commission, saveState, drainExclusive, isWorking, clearWorkspace, setOwner,
+  runTaskNow, setValues, pushToGithub, adoptVaultState,
   STAGES, DEVICE_CLASSES, CONCURRENCY, ENGINE_VERSION,
 } from '@/lib/beast/engine';
 import { githubConfigured } from '@/lib/beast/storage';
@@ -13,7 +14,9 @@ export const maxDuration = 60;
 function publicState(state: ReturnType<typeof loadState>) {
   return {
     version: state.version,
-    day: state.day,
+    cycle: state.cycle,
+    startedAt: state.startedAt,
+    working: isWorking(),
     owner: state.owner,
     concurrency: CONCURRENCY,
     stages: STAGES,
@@ -32,17 +35,18 @@ function publicState(state: ReturnType<typeof loadState>) {
         stageIndex: s.stageIndex,
         status: s.status,
         price: s.price,
-        startedDay: s.startedDay,
+        startedAt: s.startedAt,
         design: s.design,
         palette: s.palette,
         qa: s.qa ?? null,
         copyright: s.copyright,
-        log: s.log.slice(-3),
-        // v3 task ledger + artifacts (Mission Control)
+        log: s.log.slice(-5),
+        // v4 task ledger + artifacts (the progress panel + Mission Control)
         tasks: s.tasks.map((t) => ({
           id: t.id, kind: t.kind, title: t.title, why: t.why, status: t.status,
           pageKey: t.pageKey ?? null, device: t.device ?? null, detour: t.detour ?? false,
           attempts: t.attempts, precision: t.precision, note: t.note ?? null, rules: t.rules.length,
+          acceptedAt: t.acceptedAt ?? null,
         })),
         pages: s.art.pages ?? [],
         brief: s.art.brief ?? null,
@@ -63,15 +67,16 @@ function publicState(state: ReturnType<typeof loadState>) {
         },
       };
     }),
+    log: state.log.slice(0, 200), // the actual execution log, newest first
     transcript: state.transcript.slice(0, 60),
-    log: state.log.slice(0, 14),
   };
 }
 
 export async function GET() {
   const state = loadState();
   await adoptVaultState(state); // cold boot? adopt the vaulted studio (durable memory)
-  await tick(state); // auto catch-up on missed real days
+  bootStudio(state);            // empty floor? commission real sites right now
+  void drainExclusive(state, { maxTasks: 4, maxMs: 40_000 }).catch(() => {}); // start working immediately
   return NextResponse.json(publicState(state));
 }
 
@@ -81,9 +86,23 @@ export async function POST(req: NextRequest) {
     action?: string; owner?: string; siteId?: string; values?: unknown;
   };
   switch (body.action) {
-    case 'skip': {
-      const ran = await forceDay(state);
-      return NextResponse.json({ ok: true, ran, ...publicState(state) });
+    // the one honest work control: drain the WHOLE pending ledger now
+    case 'work': {
+      bootStudio(state);
+      const report = await drainExclusive(state, { maxTasks: 400, maxMs: 50_000 });
+      return NextResponse.json({
+        ok: true, jobs: report.jobs.slice(-8), executed: report.executed,
+        remaining: report.remaining, skipped: report.skipped ?? false, ...publicState(state),
+      });
+    }
+    case 'commission': {
+      const inStudio = state.sites.filter((s) => s.status === 'in-studio').length;
+      if (inStudio >= CONCURRENCY) {
+        return NextResponse.json({ ok: true, commissioned: 0, message: `Studio floor is full — ${CONCURRENCY} sites already in the studio.`, ...publicState(state) });
+      }
+      const site = commission(state);
+      saveState(state);
+      return NextResponse.json({ ok: true, commissioned: 1, jobs: [`Commissioned ${site.brand} — ${site.nicheLabel} in ${site.city}`], ...publicState(state) });
     }
     case 'runTask': {
       const jobs = await runTaskNow(state, body.siteId);
@@ -91,6 +110,7 @@ export async function POST(req: NextRequest) {
     }
     case 'clear': {
       clearWorkspace(state);
+      bootStudio(state);
       return NextResponse.json({ ok: true, cleared: true, ...publicState(state) });
     }
     case 'setOwner': {

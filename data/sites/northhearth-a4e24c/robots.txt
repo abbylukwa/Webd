@@ -1,5 +1,0 @@
-# robots.txt — NorthHearth
-User-agent: *
-Allow: /
-
-Sitemap: https://northhearth.site/sitemap.xml

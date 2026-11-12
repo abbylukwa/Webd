@@ -1,5 +1,6 @@
-// Beast Task Graph v3 — the micro-task engine.
-// One site advances EXACTLY ONE micro-task per work cycle ("one task, perfected").
+// Beast Task Graph v4 — the micro-task engine.
+// Tasks execute one at a time, each perfected, and the ledger drains until
+// nothing is pending — the studio gives its all to every task, however small.
 // Every task carries its rules + knowledge (governance), has an output contract,
 // is executed by the AI (when configured) or the deterministic solver, and must
 // pass its gates before the output freezes. Detours ("greet back, keep walking")
@@ -46,7 +47,7 @@ export type Task = {
   precision: number;                // 0..1
   note?: string;                    // last critique / reason
   output?: unknown;
-  acceptedDay?: number;
+  acceptedAt?: string;            // real ISO timestamp of acceptance
 };
 
 export type SiteArt = {
@@ -66,7 +67,6 @@ export type SiteArt = {
 /* ---------- solver context (provided by the engine) ---------- */
 export type TaskCtx = {
   owner: string;
-  day: number;
   siteDir: (siteId: string) => string;
   logTurn: (turn: AiTurn) => void;
 };
@@ -388,7 +388,7 @@ export async function runNextTask(ctx: TaskCtx, site: V3Site): Promise<string> {
   if (verdict === 'ACCEPT') {
     task.status = 'accepted';
     task.precision = precision;
-    task.acceptedDay = ctx.day;
+    task.acceptedAt = new Date().toISOString();
     // page.plan decomposes into the per-page sub-task tree
     if (task.kind === 'page.plan') {
       site.tasks.push(...expandAfterPlan(site).map((t) => ({ ...t, siteId: site.id })));

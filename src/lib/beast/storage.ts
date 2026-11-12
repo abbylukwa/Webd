@@ -35,7 +35,7 @@ async function gh<T = unknown>(path: string, init: RequestInit = {}, timeoutMs =
         accept: 'application/vnd.github+json',
         authorization: `Bearer ${token}`,
         'x-github-api-version': '2022-11-28',
-        'user-agent': 'BeastWebDeveloper/3.0',
+        'user-agent': 'BeastWebDeveloper/4.0',
         ...(init.body ? { 'content-type': 'application/json' } : {}),
         ...(init.headers ?? {}),
       },
@@ -152,7 +152,7 @@ export async function pushStudioState(stateJson: string): Promise<PublishResult>
   const { status, data } = await gh<{ content?: { sha?: string } }>(`/repos/${repo.fullName}/contents/beast-state.json`, {
     method: 'PUT',
     body: JSON.stringify({
-      message: `state snapshot — day update (${new Date().toISOString().slice(0, 10)})`,
+      message: `state snapshot — truthful ledger update (${new Date().toISOString()})`,
       content: Buffer.from(stateJson, 'utf8').toString('base64'),
     }),
   });
@@ -185,9 +185,9 @@ export async function publishSiteFiles(
 ): Promise<PublishResult> {
   if (!githubConfigured()) return { ok: false, deferred: true, reason: 'BEAST_GH_TOKEN not set — add it in the Render dashboard (Environment) to enable publishing.' };
   const name = siteRepoName(brand, seed);
-  const repo = await ensureRepo(name, `${tagline} — generated & archived by Beast Web Developer v3.`);
+  const repo = await ensureRepo(name, `${tagline} — generated & archived by Beast Web Developer v4.`);
   if (!repo.ok || !repo.fullName) return { ok: false, reason: repo.reason };
-  const push = await pushFilesToRepo(repo.fullName, files, `Beast v3 publish — ${brand} (seed ${seed.slice(0, 6)})`);
+  const push = await pushFilesToRepo(repo.fullName, files, `Beast v4 publish — ${brand} (seed ${seed.slice(0, 6)})`);
   if (!push.ok) return { ok: false, reason: push.reason };
   return { ok: true, repo: repo.fullName, url: `https://github.com/${repo.fullName}`, commitUrl: push.commitUrl };
 }

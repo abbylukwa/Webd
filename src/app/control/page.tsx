@@ -23,13 +23,13 @@ import {
 } from 'lucide-react';
 
 /* ---------- types (mirror of /api/beast) ---------- */
-type Task = { id: string; kind: string; title: string; why: string; status: string; pageKey: string | null; device: string | null; detour: boolean; attempts: number; precision: number; note: string | null; rules: number };
+type Task = { id: string; kind: string; title: string; why: string; status: string; pageKey: string | null; device: string | null; detour: boolean; attempts: number; precision: number; note: string | null; rules: number; acceptedAt: string | null };
 type Site = {
-  id: string; brand: string; nicheLabel: string; city: string; stageIndex: number; status: string; price: number; startedDay: number;
+  id: string; brand: string; nicheLabel: string; city: string; stageIndex: number; status: string; price: number; startedAt: string;
   design: { heroVariant: string; navVariant: string; motif: string; fontHead: string; fontBody: string; spaceRhythm: string; sectionCount: number };
   palette: { name: string; harmony: string; theme: string; swatches: string[] };
   qa: { contrast: { pair: string; ratio: number; pass: boolean }[]; breakpoints: string[]; crap: string[] } | null;
-  copyright: string; log: { day: number; entry: string }[];
+  copyright: string; log: { at: string; entry: string }[];
   tasks: Task[]; pages: { key: string; title: string; purpose: string; file: string; inNav: boolean }[];
   brief: { audience: string; tone: string; promise: string; cityStory?: string } | null;
   revisions: Record<string, { v: number; lines: number; diff: number; at: string }[]> | null;
@@ -40,12 +40,13 @@ type Site = {
   taskCounts: { total: number; accepted: number; queued: number; deferred: number };
 };
 type Turn = { id: string; taskId: string; taskTitle: string; provider: string; mode: string; promptTitle: string; envelope: string; raw: string; interpretation: string; verdict: string; action: string; precision: number; at: string };
+type LogEvent = { at: string; siteId?: string; taskTitle?: string; message: string; level: 'info' | 'done' | 'warn' | 'error' };
 type State = {
-  version: number; day: number; owner: string; concurrency: number;
+  version: number; cycle: number; startedAt: string; working: boolean; owner: string; concurrency: number;
   stages: { key: string; label: string; desc: string }[];
   devices: { id: string; name: string; range: string }[];
   layoutCount: number; github: { configured: boolean }; ai: { enabled: boolean };
-  sites: Site[]; transcript: Turn[]; log: { day: number; date: string; jobs: string[] }[];
+  sites: Site[]; transcript: Turn[]; log: LogEvent[];
 };
 
 const STATUS_STYLE: Record<string, string> = {
@@ -170,7 +171,8 @@ export default function ControlPage() {
             <Badge variant="outline" className="text-zinc-400">v{state.version}</Badge>
           </div>
           <div className="ml-auto flex items-center gap-2 text-xs text-zinc-400 flex-wrap">
-            <Badge variant="outline" className="gap-1"><Clock className="h-3 w-3" /> DAY {state.day}</Badge>
+            <Badge variant="outline" className={state.working ? 'gap-1 border-amber-800 text-amber-300' : 'gap-1'}><Activity className="h-3 w-3" /> {state.working ? 'WORKING…' : 'IDLE'}</Badge>
+            <Badge variant="outline" className="gap-1"><Clock className="h-3 w-3" /> cycle {state.cycle}</Badge>
             <Badge variant="outline" className="gap-1"><Database className="h-3 w-3" /> GitHub {state.github.configured ? 'connected' : 'not connected'}</Badge>
             <Badge variant="outline" className="gap-1"><Sparkles className="h-3 w-3" /> AI {state.ai.enabled ? 'enabled' : 'solver floor'}</Badge>
             <Badge variant="outline" className="gap-1"><Braces className="h-3 w-3" /> {state.layoutCount} layouts</Badge>
@@ -212,7 +214,7 @@ export default function ControlPage() {
           <TabsContent value="progress" className="space-y-4">
             {state.sites.length === 0 && (
               <Card className="bg-zinc-900 border-zinc-800"><CardContent className="p-8 text-center text-zinc-400">
-                The studio floor is empty — every site will be earned task by task. Use <b>Controls → Skip ahead</b> to run a work day now.
+                The studio floor is empty — every site is earned task by task. Press <b>Work now</b> in Controls to start the drain immediately.
               </CardContent></Card>
             )}
             <div className="grid md:grid-cols-2 gap-4">
@@ -269,19 +271,19 @@ export default function ControlPage() {
           <TabsContent value="difference" className="space-y-4">
             <div className="grid lg:grid-cols-2 gap-4">
               <Card className="bg-zinc-900 border-zinc-800">
-                <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><FileDiff className="h-4 w-4 text-sky-400" /> Work log — what changed, day by day</CardTitle></CardHeader>
+                <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><FileDiff className="h-4 w-4 text-sky-400" /> The actual log — every execution, real timestamps</CardTitle></CardHeader>
                 <CardContent>
                   <ScrollArea className="h-96">
-                    <div className="space-y-3 pr-2">
-                      {state.log.map((d) => (
-                        <div key={`${d.day}-${d.date}`} className="border-l-2 border-zinc-700 pl-3">
-                          <div className="text-xs text-zinc-500">DAY {d.day} · {d.date}</div>
-                          <ul className="text-xs text-zinc-300 mt-1 space-y-0.5">
-                            {d.jobs.map((j, i) => <li key={i}>· {j}</li>)}
-                          </ul>
-                        </div>
+                    <ul className="space-y-1.5 pr-2">
+                      {state.log.slice(0, 120).map((ev, i) => (
+                        <li key={i} className="border-l-2 border-zinc-700 pl-3 leading-snug">
+                          <span className="font-mono text-[10px] text-zinc-500">{new Date(ev.at).toLocaleString()}</span>
+                          {ev.taskTitle && <span className="ml-2 font-mono text-[10px] text-zinc-600">{ev.taskTitle}</span>}
+                          <div className={`text-xs ${ev.level === 'done' ? 'text-lime-300' : ev.level === 'warn' ? 'text-amber-300' : ev.level === 'error' ? 'text-red-400' : 'text-zinc-300'}`}>{ev.message}</div>
+                        </li>
                       ))}
-                    </div>
+                      {state.log.length === 0 && <li className="text-xs text-zinc-500">The log is empty — it fills as the beast executes.</li>}
+                    </ul>
                   </ScrollArea>
                 </CardContent>
               </Card>
@@ -382,7 +384,7 @@ export default function ControlPage() {
             <Card className="bg-zinc-900 border-zinc-800">
               <CardHeader className="pb-2"><CardTitle className="text-base">Every answer, interpreted — newest first</CardTitle></CardHeader>
               <CardContent className="space-y-3">
-                {state.transcript.length === 0 && <p className="text-xs text-zinc-500">No turns yet — run a work day from Controls.</p>}
+                {state.transcript.length === 0 && <p className="text-xs text-zinc-500">No turns yet — the first executions land here as they happen.</p>}
                 {state.transcript.slice(0, 40).map((t) => (
                   <details key={t.id} className="rounded-lg border border-zinc-800 p-3 group">
                     <summary className="cursor-pointer list-none">
@@ -420,7 +422,8 @@ export default function ControlPage() {
                     <Button size="sm" disabled={busy !== '' || !ownerDraft.trim()} onClick={() => act({ action: 'setOwner', owner: ownerDraft }, 'Owner renamed')}>Save</Button>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Button size="sm" variant="outline" disabled={busy !== ''} onClick={() => act({ action: 'skip' }, 'Work day forced')}><Play className="h-3.5 w-3.5 mr-1" /> Skip ahead — force a work day</Button>
+                    <Button size="sm" variant="outline" disabled={busy !== ''} onClick={() => act({ action: 'work' }, 'Ledger drained')}><Play className="h-3.5 w-3.5 mr-1" /> Work now — drain all pending tasks</Button>
+                    <Button size="sm" variant="outline" disabled={busy !== ''} onClick={() => act({ action: 'commission' }, 'New site commissioned')}><Zap className="h-3.5 w-3.5 mr-1" /> Commission a site</Button>
                     <Button size="sm" variant="outline" disabled={busy !== '' || !state.github.configured || forSale.length === 0} onClick={() => act({ action: 'pushGithub', siteId: 'all' }, 'Pushed to GitHub vaults')}><Github className="h-3.5 w-3.5 mr-1" /> Push all shelf sites to GitHub</Button>
                     <AlertDialog>
                       <AlertDialogTrigger asChild>

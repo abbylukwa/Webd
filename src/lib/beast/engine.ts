@@ -1,17 +1,17 @@
-// Beast Engine v3 — the daily work loop, now on the micro-task graph.
-// One site advances EXACTLY ONE micro-task per work day (the owner's law:
-// "we give it 1 task so that it perfects it"). Missed days replay automatically.
-// v3 fresh start: no simulated placeholder sites — the studio opens EMPTY and
-// earns its shelf task by task. Finished sites archive to their own GitHub repo
-// (no database needed — the owner's question, answered in storage.ts).
+// Beast Engine v4 — the truthful work engine.
+// No day theater: there is no simulated calendar, no "one task per day" law,
+// no rush button. When the studio works it DRAINS the whole pending ledger —
+// every queued micro-task executes, one after another, until nothing is left.
+// Every log line is a real execution event with a real timestamp. Nothing is
+// simulated, nothing is imaginary. Finished sites archive to their own GitHub
+// repo (no database needed — the owner's question, answered in storage.ts).
 import fs from 'fs';
 import path from 'path';
 import JSZip from 'jszip';
 import { newSeed } from './rng';
-import { renderSite, renderInnerPage, renderSupportFiles, type RenderArt } from './render';
+import { renderSite, renderSupportFiles } from './render';
 import { DEVICE_CLASSES, STAGES, type DesignSpec } from './spec';
 import { LAYOUTS } from './layouts';
-import type { Palette } from './palette';
 import {
   planInitialTasks, runNextTask, executeIoTask, listSiteFiles, rebuildAllPages,
   type Task, type TaskStatus, type SiteArt, type TaskCtx,
@@ -27,9 +27,18 @@ const SITES_DIR = () => path.join(DATA_DIR(), 'sites');
 const STATE_FILE = () => path.join(DATA_DIR(), 'beast-state.json');
 export const CONCURRENCY = 3;
 export const OWNER_DEFAULT = 'Beast Studio';
-export const ENGINE_VERSION = 3;
+export const ENGINE_VERSION = 4;
 
 export type SiteStatus = 'in-studio' | 'for-sale' | 'sold';
+
+/** One real execution event — the actual log, never grouped by day. */
+export type LogEvent = {
+  at: string;                       // real ISO timestamp
+  siteId?: string;
+  taskTitle?: string;
+  message: string;
+  level: 'info' | 'done' | 'warn' | 'error';
+};
 
 export type BeastSite = {
   id: string;
@@ -40,8 +49,8 @@ export type BeastSite = {
   stageIndex: number;
   status: SiteStatus;
   price: number;
-  startedDay: number;
-  log: { day: number; entry: string }[];
+  startedAt: string;                // real ISO timestamp of the commission
+  log: { at: string; entry: string }[];
   design: Pick<DesignSpec, 'heroVariant' | 'navVariant' | 'motif' | 'fontHead' | 'fontBody' | 'spaceRhythm'> & { sectionCount: number };
   palette: { name: string; harmony: string; theme: string; swatches: string[] };
   qa?: { contrast: { pair: string; ratio: number; pass: boolean }[]; dark?: { pair: string; ratio: number; pass: boolean }[]; breakpoints: string[]; crap: string[] };
@@ -50,14 +59,13 @@ export type BeastSite = {
   tasks: Task[];
 };
 
-export type DayLog = { day: number; date: string; jobs: string[] };
 export type BeastState = {
   version: number;
-  day: number;
-  lastRealTick: string | null;
+  cycle: number;                    // workspace generation — increments on every clear
+  startedAt: string;                // when this cycle began (real time)
   owner: string;
   sites: BeastSite[];
-  log: DayLog[];
+  log: LogEvent[];                  // the actual execution log, newest first
   transcript: AiTurn[];
 };
 
@@ -66,26 +74,28 @@ function ensureDirs() {
   fs.mkdirSync(SITES_DIR(), { recursive: true });
 }
 
+export function nowIso(): string {
+  return new Date().toISOString();
+}
+
+function siteDir(id: string): string {
+  return path.join(SITES_DIR(), id);
+}
+
 export function loadState(): BeastState {
   ensureDirs();
   if (fs.existsSync(STATE_FILE())) {
     try {
       const parsed = JSON.parse(fs.readFileSync(STATE_FILE(), 'utf8')) as BeastState;
       if (parsed.version === ENGINE_VERSION) return parsed;
-      // pre-v3 state (placeholder sim sites) → fresh start per owner directive
+      // older state (v3 day-theater or earlier) → fresh start per owner directive
     } catch { /* corrupt → rebuild */ }
   }
   const state: BeastState = {
-    version: ENGINE_VERSION, day: 0, lastRealTick: null, owner: OWNER_DEFAULT, sites: [], log: [],
-    transcript: [],
+    version: ENGINE_VERSION, cycle: 1, startedAt: nowIso(), owner: OWNER_DEFAULT,
+    sites: [], log: [], transcript: [],
   };
-  if (process.env.BEAST_WARMUP === '1') {
-    // opt-in demo warm-up (kept for the Test Center sandbox scenario)
-    state.log.push({ day: 0, date: todayUTC(), jobs: ['Warm-up enabled — placeholder sim days will be replayed.'] });
-  } else {
-    state.log.push({ day: 0, date: todayUTC(), jobs: ['v3 fresh start — the studio opens empty and earns its shelf task by task.'] });
-  }
-  state.lastRealTick = todayUTC();
+  logEvent(state, { message: 'v4 truthful engine — the studio opens empty and every task is real work, logged as it happens.', level: 'info' });
   saveState(state);
   return state;
 }
@@ -111,29 +121,28 @@ export function saveState(state: BeastState) {
 
 /**
  * Durable memory, other direction: on a cold boot (ephemeral disk wiped the
- * state file) adopt the vaulted studio state — the day counter, the task
- * ledger, the transcript all survive deploys and restarts. Site files are
- * rebuilt on demand from the frozen artifacts (self-heal in getSiteHtml).
+ * state file) adopt the vaulted studio state — the ledger, the transcript all
+ * survive deploys and restarts. Site files are rebuilt on demand from the
+ * frozen artifacts (self-heal in getSiteHtml).
  */
 export async function adoptVaultState(
   state: BeastState,
   loader: () => Promise<string | null> = loadStudioState
 ): Promise<boolean> {
-  if (state.day > 0 || state.sites.length > 0) return false; // local state exists — it wins
+  if (state.sites.length > 0 || state.log.length > 1) return false; // local state exists — it wins
   try {
     const raw = await loader();
     if (!raw) return false;
     const vaulted = JSON.parse(raw) as BeastState;
-    if (vaulted?.version !== ENGINE_VERSION || typeof vaulted.day !== 'number') return false;
-    if (vaulted.day <= 0 && (vaulted.sites?.length ?? 0) === 0) return false; // nothing to adopt
-    state.day = vaulted.day;
-    state.lastRealTick = vaulted.lastRealTick ?? null;
+    if (vaulted?.version !== ENGINE_VERSION || !Array.isArray(vaulted.sites)) return false;
+    if (vaulted.sites.length === 0 && (vaulted.log?.length ?? 0) <= 1) return false; // nothing to adopt
+    state.cycle = vaulted.cycle ?? 1;
+    state.startedAt = vaulted.startedAt ?? state.startedAt;
     state.owner = vaulted.owner || state.owner;
     state.sites = vaulted.sites ?? [];
     state.log = vaulted.log ?? [];
     state.transcript = vaulted.transcript ?? [];
-    saveState(state);
-    state.log.unshift({ day: state.day, date: todayUTC(), jobs: [`Vault adopted — studio restored to DAY ${state.day} with ${state.sites.length} site(s) from ${VAULT_REPO}.`] });
+    logEvent(state, { message: `Vault adopted — ${state.sites.length} site(s) and the full ledger restored from ${VAULT_REPO}.`, level: 'info' });
     saveState(state);
     return true;
   } catch {
@@ -141,12 +150,10 @@ export async function adoptVaultState(
   }
 }
 
-function todayUTC(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function siteDir(id: string): string {
-  return path.join(SITES_DIR(), id);
+/* ---------- the actual log ---------- */
+export function logEvent(state: BeastState, ev: Omit<LogEvent, 'at'> & { at?: string }): void {
+  state.log.unshift({ at: ev.at ?? nowIso(), siteId: ev.siteId, taskTitle: ev.taskTitle, message: ev.message, level: ev.level });
+  if (state.log.length > 400) state.log.length = 400;
 }
 
 /* ---------- stage progress (derived from the task ledger) ---------- */
@@ -165,7 +172,7 @@ export function syncStage(site: BeastSite): void {
 }
 
 /* ---------- site lifecycle ---------- */
-function commission(state: BeastState, day: number): BeastSite {
+export function commission(state: BeastState): BeastSite {
   const seed = newSeed();
   const probe = renderSite(seed, state.owner);
   const id = `${probe.brand.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${seed.slice(0, 6)}`;
@@ -178,8 +185,8 @@ function commission(state: BeastState, day: number): BeastSite {
     stageIndex: 0,
     status: 'in-studio',
     price: 0,
-    startedDay: day,
-    log: [{ day, entry: `Commission accepted: ${probe.brand} — ${probe.niche.label} in ${probe.city}` }],
+    startedAt: nowIso(),
+    log: [],
     design: {
       heroVariant: probe.design.heroVariant,
       navVariant: probe.design.navVariant,
@@ -199,13 +206,35 @@ function commission(state: BeastState, day: number): BeastSite {
     art: {},
     tasks: planInitialTasks(id),
   };
+  const entry = `Commission accepted: ${probe.brand} — ${probe.niche.label} in ${probe.city}`;
+  site.log.push({ at: nowIso(), entry });
+  state.sites.push(site);
+  logEvent(state, { siteId: site.id, message: entry, level: 'info' });
   return site;
+}
+
+/** Keep the studio floor full: commission new sites until CONCURRENCY slots are taken. */
+export function topUp(state: BeastState): number {
+  let added = 0;
+  while (state.sites.filter((s) => s.status === 'in-studio').length < CONCURRENCY) {
+    commission(state);
+    added += 1;
+  }
+  if (added > 0) saveState(state);
+  return added;
+}
+
+/** Cold boot: an empty studio commissions its first batch immediately. */
+export function bootStudio(state: BeastState): number {
+  if (state.sites.length > 0) return 0;
+  const added = topUp(state);
+  if (added > 0) logEvent(state, { message: `Studio booted — ${added} site(s) commissioned and queued for real work.`, level: 'info' });
+  return added;
 }
 
 function taskCtx(state: BeastState): TaskCtx {
   return {
     owner: state.owner,
-    day: state.day,
     siteDir,
     logTurn: (turn) => {
       state.transcript.unshift(turn);
@@ -222,85 +251,97 @@ async function runSiteTask(state: BeastState, site: BeastSite): Promise<string> 
   }
   const ctx = taskCtx(state);
   const IO_KINDS: Task['kind'][] = ['image.select', 'page.build', 'page.review', 'qa.audit', 'site.stamp', 'github.publish'];
+  let msg: string;
   if (IO_KINDS.includes(task.kind)) {
     task.status = 'running';
-    const msg = await executeIoTask(ctx, site, task);
+    msg = (await executeIoTask(ctx, site, task)) ?? `${site.brand}: ${task.title} — done`;
     const st = task.status as TaskStatus; // executeIoTask may set 'deferred'
     if (st !== 'deferred') {
       task.status = 'accepted';
       task.precision = task.precision || 0.9;
-      task.acceptedDay = ctx.day;
+      task.acceptedAt = nowIso();
     }
     ctx.logTurn({
       id: `${task.id}-${Date.now()}`, taskId: task.id, taskTitle: task.title, provider: 'beast-io', mode: 'solver',
       promptTitle: task.why, envelope: task.rules.join(' | ').slice(0, 800),
       raw: msg ?? '(done)', interpretation: task.note ?? 'IO task executed', verdict: st === 'deferred' ? 'DEFER' : 'ACCEPT',
-      action: st === 'deferred' ? 'deferred — will retry via Push button' : 'artifact written to disk',
-      precision: task.precision, at: new Date().toISOString(),
+      action: st === 'deferred' ? 'deferred — will retry via Publish button' : 'artifact written to disk',
+      precision: task.precision, at: nowIso(),
     });
-    syncStage(site);
-    return msg ?? `${site.brand}: ${task.title} — done`;
+  } else {
+    msg = await runNextTask(ctx, site);
   }
-  const msg = await runNextTask(ctx, site);
   syncStage(site);
+  const done = task.status === 'accepted';
+  const entry = msg;
+  site.log.push({ at: nowIso(), entry });
+  if (site.log.length > 40) site.log.length = 40;
+  logEvent(state, {
+    siteId: site.id, taskTitle: task.title, message: entry,
+    level: done ? 'done' : task.status === 'deferred' ? 'warn' : 'info',
+  });
+  saveState(state);
   return msg;
 }
 
-/* ---------- the work day ---------- */
-export async function runWorkDay(state: BeastState, date: string): Promise<string[]> {
-  state.day += 1;
-  const day = state.day;
+/* ---------- the truthful work loop ---------- */
+export type DrainReport = { executed: number; remaining: number; jobs: string[]; skipped?: boolean };
+
+function countQueued(state: BeastState): number {
+  return state.sites.reduce((n, s) => n + s.tasks.filter((t) => t.status === 'queued').length, 0);
+}
+
+/**
+ * Work until the ledger is empty — the studio gives its all to every task,
+ * however small. Round-robin across all in-studio sites so every commission
+ * advances. Budgeted (maxTasks / maxMs) so a heartbeat slice or an HTTP
+ * request can never run away; the remaining count is always honest.
+ */
+export async function runStudio(
+  state: BeastState,
+  opts: { maxTasks?: number; maxMs?: number } = {}
+): Promise<DrainReport> {
+  const t0 = Date.now();
+  const maxTasks = opts.maxTasks ?? Number.POSITIVE_INFINITY;
+  const maxMs = opts.maxMs ?? Number.POSITIVE_INFINITY;
   const jobs: string[] = [];
-
-  const inStudio = state.sites.filter((s) => s.status === 'in-studio');
-  for (const site of inStudio) {
-    const entry = await runSiteTask(state, site);
-    site.log.push({ day, entry });
-    jobs.push(entry);
+  let executed = 0;
+  for (;;) {
+    const workers = state.sites.filter((s) => s.status !== 'sold' && s.tasks.some((t) => t.status === 'queued'));
+    if (workers.length === 0) break;
+    if (executed >= maxTasks || Date.now() - t0 >= maxMs) break;
+    // fairness: the site that has advanced the least goes next (round-robin)
+    const worker = workers.reduce((a, b) =>
+      (a.tasks.filter((t) => t.status === 'accepted').length <= b.tasks.filter((t) => t.status === 'accepted').length ? a : b));
+    const before = worker.tasks.filter((t) => t.status === 'queued').length;
+    const msg = await runSiteTask(state, worker);
+    const after = worker.tasks.filter((t) => t.status === 'queued').length;
+    if (after < before) executed += 1;
+    jobs.push(msg);
   }
-
-  let active = state.sites.filter((s) => s.status === 'in-studio').length;
-  while (active < CONCURRENCY) {
-    const site = commission(state, day);
-    state.sites.push(site);
-    jobs.push(site.log[0].entry);
-    active += 1;
-  }
-
-  state.log.unshift({ day, date, jobs });
-  if (state.log.length > 120) state.log.length = 120;
   saveState(state);
-  return jobs;
+  return { executed, remaining: countQueued(state), jobs };
 }
 
-/** Real-date catch-up: replay every missed day (cap 31 to stay snappy). */
-export async function tick(state: BeastState): Promise<DayLog[]> {
-  const today = todayUTC();
-  if (state.lastRealTick === today) return [];
-  const last = state.lastRealTick ? new Date(state.lastRealTick + 'T00:00:00Z') : new Date(Date.now() - 86400000);
-  const now = new Date(today + 'T00:00:00Z');
-  let missed = Math.floor((now.getTime() - last.getTime()) / 86400000);
-  if (missed < 1) {
-    state.lastRealTick = today;
-    saveState(state);
-    return [];
-  }
-  missed = Math.min(missed, 31);
-  const ran: DayLog[] = [];
-  for (let i = missed; i > 0; i--) {
-    const d = new Date(now.getTime() - (i - 1) * 86400000).toISOString().slice(0, 10);
-    const jobs = await runWorkDay(state, d);
-    ran.push({ day: state.day, date: d, jobs });
-  }
-  state.lastRealTick = today;
-  saveState(state);
-  return ran;
+const g = globalThis as unknown as { __beastWorking?: boolean };
+
+/** True while a drain is running in this process (the UI shows "working…"). */
+export function isWorking(): boolean {
+  return !!g.__beastWorking;
 }
 
-/** Force the next micro-task cycle right now (one task per site). */
-export async function forceDay(state: BeastState): Promise<DayLog> {
-  const jobs = await runWorkDay(state, `sim-day-${state.day + 1}`);
-  return { day: state.day, date: 'simulated', jobs };
+/** Exclusive drain — heartbeat and API share one mutex so work never doubles. */
+export async function drainExclusive(
+  state: BeastState,
+  opts: { maxTasks?: number; maxMs?: number } = {}
+): Promise<DrainReport> {
+  if (g.__beastWorking) return { executed: 0, remaining: countQueued(state), jobs: [], skipped: true };
+  g.__beastWorking = true;
+  try {
+    return await runStudio(state, opts);
+  } finally {
+    g.__beastWorking = false;
+  }
 }
 
 /* ---------- file ops ---------- */
@@ -337,7 +378,7 @@ export async function zipSite(state: BeastState, id: string): Promise<Buffer | n
   for (const [name, content] of Object.entries(support)) if (!files.some((f) => f.rel === name)) zip.file(name, content);
   zip.file(
     'LICENSE.txt',
-    `${site.copyright}\n\nThis website was generated by Beast Web Developer v3.\nDesign seed: ${site.seed}\nPalette: ${site.palette.name} (${site.palette.harmony})\nPages: ${['index.html', ...(site.art.pages ?? []).filter((p) => p.key !== 'home').map((p) => p.file)].join(', ')}\nLayouts: 5 device classes (D1–D5), ${LAYOUTS.length}-layout library\nArchive: ${site.art.git ? `github.com/${site.art.git.repo}` : 'not published yet'}\n`
+    `${site.copyright}\n\nThis website was generated by Beast Web Developer v4.\nDesign seed: ${site.seed}\nPalette: ${site.palette.name} (${site.palette.harmony})\nPages: ${['index.html', ...(site.art.pages ?? []).filter((p) => p.key !== 'home').map((p) => p.file)].join(', ')}\nLayouts: 5 device classes (D1–D5), ${LAYOUTS.length}-layout library\nArchive: ${site.art.git ? `github.com/${site.art.git.repo}` : 'not published yet'}\n`
   );
   zip.file('README.txt', `${site.brand} — ${site.nicheLabel} in ${site.city}\n\nOpen index.html in any browser. Inner pages: ${(site.art.pages ?? []).filter((p) => p.key !== 'home').map((p) => p.file).join(', ')}.\nThe same site serves five different relative layouts:\n  D1 phone  ≤ 640px\n  D2 tablet 641–1024px\n  D3 laptop 1025–1440px\n  D4 desktop 1441–1920px\n  D5 ultra  ≥ 1921px\n\nEvery fact (phones, socials, products, address) lives in values.json — edit it and re-render.\n\n${site.copyright}\n`);
   return zip.generateAsync({ type: 'nodebuffer' });
@@ -357,8 +398,9 @@ export async function zipAll(state: BeastState): Promise<Buffer> {
 export function deleteSite(state: BeastState, id: string): boolean {
   const idx = state.sites.findIndex((s) => s.id === id);
   if (idx < 0) return false;
-  state.sites.splice(idx, 1);
+  const [gone] = state.sites.splice(idx, 1);
   fs.rmSync(siteDir(id), { recursive: true, force: true });
+  logEvent(state, { siteId: id, message: `${gone.brand} removed from the workspace — files deleted.`, level: 'warn' });
   saveState(state);
   return true;
 }
@@ -367,7 +409,9 @@ export function clearWorkspace(state: BeastState): void {
   for (const s of state.sites) fs.rmSync(siteDir(s.id), { recursive: true, force: true });
   state.sites = [];
   state.transcript = [];
-  state.log.unshift({ day: state.day, date: todayUTC(), jobs: ['Workspace cleared — fresh start, the ledger is empty again.'] });
+  state.cycle += 1;
+  state.startedAt = nowIso();
+  logEvent(state, { message: `Workspace cleared — cycle ${state.cycle} begins with an empty floor. Real logs continue below.`, level: 'warn' });
   saveState(state);
 }
 
@@ -380,17 +424,16 @@ export async function setOwner(state: BeastState, owner: string): Promise<void> 
       await rebuildAllPages(taskCtx(state), s);
     }
   }
+  logEvent(state, { message: `Copyright owner set to "${state.owner}" — every shelf page re-stamped.`, level: 'info' });
   saveState(state);
 }
 
-/* ---------- v3 controls ---------- */
+/* ---------- v4 controls ---------- */
 export async function runTaskNow(state: BeastState, siteId?: string): Promise<string[]> {
   const targets = state.sites.filter((s) => s.status === 'in-studio' && (!siteId || s.id === siteId));
   const jobs: string[] = [];
   for (const site of targets) {
-    const entry = await runSiteTask(state, site);
-    site.log.push({ day: state.day, entry });
-    jobs.push(entry);
+    jobs.push(await runSiteTask(state, site));
   }
   saveState(state);
   return jobs;
@@ -404,6 +447,7 @@ export async function setValues(state: BeastState, siteId: string, values: unkno
   site.art.values = res.clean;
   // the owner edits once — every already-built page re-renders with the new facts
   if ((site.art.pages ?? []).length > 0) await rebuildAllPages(taskCtx(state), site);
+  logEvent(state, { siteId: site.id, message: `${site.brand}: owner edited the values — ${res.ok ? 'all pages re-rendered with the new facts' : `warnings: ${res.issues.map((i) => i.field).join(', ')}`}.`, level: res.ok ? 'done' : 'warn' });
   saveState(state);
   return { ok: true, issues: res.ok ? undefined : res.issues.map((i) => `${i.field}: ${i.problem}`) };
 }
@@ -420,6 +464,7 @@ export async function pushToGithub(state: BeastState, siteId: string | 'all'): P
       jobs.push(await executeIoTask(ctx, site, task) ?? `${site.brand}: publish retried`);
       const st = task.status as TaskStatus;
       if (st !== 'deferred') task.status = 'accepted';
+      logEvent(state, { siteId: site.id, taskTitle: task.title, message: jobs[jobs.length - 1], level: st === 'deferred' ? 'warn' : 'done' });
     }
   }
   saveState(state);

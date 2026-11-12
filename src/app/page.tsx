@@ -15,8 +15,9 @@ import { useToast } from '@/hooks/use-toast';
 import { LAYOUTS, specSummary } from '@/lib/beast/layouts';
 import { LIBRARY } from '@/lib/beast/knowledge';
 import {
-  Download, Trash2, Eye, FastForward, Package, Github, Keyboard, Ruler, Palette as PaletteIcon,
+  Download, Trash2, Eye, Play, Plus, Package, Github, Keyboard, Ruler, Palette as PaletteIcon,
   Layers, Infinity as InfinityIcon, BookOpen, ShieldCheck, MonitorSmartphone, FlaskConical, Gauge,
+  Sparkles, Braces, CheckCircle2, Clock, Activity, ChevronDown,
 } from 'lucide-react';
 
 /* ---------- types (mirror of API) ---------- */
@@ -26,17 +27,28 @@ type Device = {
   container: string; gutter: string; typeNote: string; cta: string; extras: string[];
 };
 type Stage = { key: string; label: string; desc: string };
+type Task = {
+  id: string; kind: string; title: string; why: string; status: string;
+  pageKey: string | null; device: string | null; detour: boolean; attempts: number;
+  precision: number; note: string | null; rules: number; acceptedAt: string | null;
+};
 type Site = {
   id: string; brand: string; nicheLabel: string; city: string;
-  stageIndex: number; status: 'in-studio' | 'for-sale' | 'sold'; price: number; startedDay: number;
+  stageIndex: number; status: 'in-studio' | 'for-sale' | 'sold'; price: number; startedAt: string;
   design: { heroVariant: string; navVariant: string; motif: string; fontHead: string; fontBody: string; spaceRhythm: string; sectionCount: number };
   palette: { name: string; harmony: string; theme: string; swatches: string[] };
   qa: null | { contrast: { pair: string; ratio: number; pass: boolean }[]; breakpoints: string[]; crap: string[] };
-  copyright: string; log: { day: number; entry: string }[];
+  copyright: string; log: { at: string; entry: string }[];
+  tasks: Task[]; progress: number;
+  taskCounts: { total: number; accepted: number; queued: number; deferred: number };
 };
+type LogEvent = { at: string; siteId?: string; taskTitle?: string; message: string; level: 'info' | 'done' | 'warn' | 'error' };
+type Turn = { id: string; taskId: string; taskTitle: string; provider: string; mode: string; promptTitle: string; envelope: string; raw: string; interpretation: string; verdict: string; action: string; precision: number; at: string };
 type Status = {
-  day: number; owner: string; concurrency: number; stages: Stage[]; devices: Device[];
-  sites: Site[]; log: { day: number; date: string; jobs: string[] }[];
+  version: number; cycle: number; startedAt: string; working: boolean;
+  owner: string; concurrency: number; stages: Stage[]; devices: Device[];
+  github: { configured: boolean }; ai: { enabled: boolean };
+  sites: Site[]; log: LogEvent[]; transcript: Turn[];
 };
 type TestResult = { id: string; group: string; feature: string; pass: boolean; detail: string };
 type TestReport = { results: TestResult[]; passCount: number; failCount: number; durationMs: number };
@@ -62,9 +74,9 @@ function StageTrack({ stages, site }: { stages: Stage[]; site: Site }) {
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <Mono>{stages[Math.min(site.stageIndex, stages.length - 1)]?.label ?? 'shipped'}</Mono>
-        <span className="font-mono text-[11px] text-lime-300">{pct}%</span>
+        <span className="font-mono text-[11px] text-lime-300">{site.progress}% · {site.taskCounts.accepted}/{site.taskCounts.total} tasks</span>
       </div>
-      <Progress value={pct} className="h-1.5 bg-zinc-800 [&>[data-slot=progress-indicator]]:bg-lime-300" />
+      <Progress value={site.progress} className="h-1.5 bg-zinc-800 [&>[data-slot=progress-indicator]]:bg-lime-300" />
       <div className="flex flex-wrap gap-1">
         {stages.map((s, i) => (
           <span
@@ -75,6 +87,40 @@ function StageTrack({ stages, site }: { stages: Stage[]; site: Site }) {
         ))}
       </div>
     </div>
+  );
+}
+
+/* ---------- exact task lists — the ledger as it is ---------- */
+function TaskRow({ t, brand }: { t: Task; brand: string }) {
+  return (
+    <li className="flex items-start gap-2 text-[13px] leading-snug">
+      {t.status === 'accepted' ? (
+        <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-lime-400" />
+      ) : t.status === 'running' ? (
+        <Activity className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-pulse text-amber-300" />
+      ) : (
+        <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zinc-600" />
+      )}
+      <span className="min-w-0">
+        <span className="text-zinc-200">{t.title}</span>
+        <span className="ml-1.5 font-mono text-[10px] text-zinc-600">{brand} · {t.kind}</span>
+        {t.status === 'accepted' && t.precision > 0 && (
+          <span className="ml-1 font-mono text-[10px] text-lime-300/80">{Math.round(t.precision * 100)}%</span>
+        )}
+        {t.note && t.status !== 'accepted' && <span className="block text-[11px] text-zinc-500">{t.note}</span>}
+      </span>
+    </li>
+  );
+}
+
+/* ---------- real log line ---------- */
+function LogLine({ ev }: { ev: LogEvent }) {
+  const color = ev.level === 'done' ? 'text-lime-300' : ev.level === 'warn' ? 'text-amber-300' : ev.level === 'error' ? 'text-red-400' : 'text-zinc-400';
+  return (
+    <li className="leading-snug">
+      <span className="font-mono text-[10px] text-zinc-600">{new Date(ev.at).toLocaleTimeString()}</span>
+      <span className={`ml-2 text-[13px] ${color}`}>{ev.message}</span>
+    </li>
   );
 }
 
@@ -155,6 +201,8 @@ function DevicePreview({ siteId, width }: { siteId: string; width: number }) {
   );
 }
 
+const VERDICT_STYLE: Record<string, 'default' | 'secondary' | 'destructive'> = { ACCEPT: 'default', REFINE: 'secondary', DEFER: 'destructive' };
+
 /* ---------- main page ---------- */
 export default function BeastPage() {
   const [status, setStatus] = useState<Status | null>(null);
@@ -179,6 +227,8 @@ export default function BeastPage() {
 
   useEffect(() => {
     refresh();
+    const t = setInterval(refresh, 8000); // live progress while the beast works
+    return () => clearInterval(t);
   }, [refresh]);
 
   const act = async (body: Record<string, unknown>, okMsg: string) => {
@@ -188,7 +238,7 @@ export default function BeastPage() {
       const data = await res.json();
       setStatus(data);
       setOwnerDraft(data.owner);
-      toast({ title: okMsg });
+      toast({ title: okMsg, description: Array.isArray(data.jobs) && data.jobs.length ? data.jobs.slice(-2).join(' · ') : data.message });
     } catch {
       toast({ title: 'Action failed', variant: 'destructive' });
     } finally {
@@ -213,10 +263,21 @@ export default function BeastPage() {
     }
   };
 
-  const active = status?.sites.filter((s) => s.status === 'in-studio') ?? [];
-  const shelf = status?.sites.filter((s) => s.status === 'for-sale') ?? [];
+  const sites = status?.sites ?? [];
+  const active = sites.filter((s) => s.status === 'in-studio');
+  const shelf = sites.filter((s) => s.status === 'for-sale');
   const devices = status?.devices ?? [];
   const dev = devices[deviceIdx];
+
+  // the exact ledger, exactly as it is
+  const allTasks = sites.flatMap((s) => s.tasks.map((t) => ({ t, brand: s.brand })));
+  const totalTasks = allTasks.length;
+  const doneTasks = allTasks
+    .filter((x) => x.t.status === 'accepted')
+    .sort((a, b) => (b.t.acceptedAt ?? '').localeCompare(a.t.acceptedAt ?? ''));
+  const pendingTasks = allTasks.filter((x) => x.t.status === 'queued' || x.t.status === 'running');
+  const deferredCount = allTasks.filter((x) => x.t.status === 'deferred').length;
+  const globalPct = totalTasks > 0 ? Math.round((doneTasks.length / totalTasks) * 100) : 0;
 
   const infty = (() => {
     // honest-ish combinatorics, computed on-log scale to avoid overflow
@@ -246,8 +307,11 @@ export default function BeastPage() {
               <Mono>autonomous web developer</Mono>
             </div>
           </div>
-          <Badge variant="outline" className="ml-1 border-lime-300/40 font-mono text-lime-300">DAY {status?.day ?? '—'}</Badge>
-          <Badge variant="outline" className="hidden font-mono text-zinc-400 sm:inline-flex">{active.length}/{status?.concurrency ?? 3} in studio</Badge>
+          <Badge variant="outline" className={status?.working ? 'border-amber-300/40 font-mono text-amber-300' : 'border-zinc-700 font-mono text-zinc-400'}>
+            {status === null ? '—' : status.working ? 'WORKING…' : 'IDLE'}
+          </Badge>
+          <Badge variant="outline" className="hidden font-mono text-zinc-400 sm:inline-flex">cycle {status?.cycle ?? '—'}</Badge>
+          <Badge variant="outline" className="hidden font-mono text-zinc-400 md:inline-flex">{active.length}/{status?.concurrency ?? 3} in studio</Badge>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1">
               <span className="font-mono text-[11px] text-zinc-500">©</span>
@@ -261,9 +325,6 @@ export default function BeastPage() {
                 aria-label="Copyright owner"
               />
             </div>
-            <Button size="sm" variant="outline" className="border-zinc-700 hover:bg-zinc-800" disabled={busy} onClick={() => act({ action: 'skip' }, 'One more work day done — no rush.')}>
-              <FastForward className="h-4 w-4" /> <span className="hidden md:inline">Force work day</span>
-            </Button>
             <a href="/control" className="inline-flex">
               <Button size="sm" variant="outline" className="border-amber-800 bg-amber-950/40 font-semibold text-amber-300 hover:bg-amber-900/40">
                 <Gauge className="h-4 w-4" /> <span className="hidden md:inline">Mission Control</span>
@@ -282,12 +343,12 @@ export default function BeastPage() {
                 <AlertDialogHeader>
                   <AlertDialogTitle>Clear the workspace?</AlertDialogTitle>
                   <AlertDialogDescription className="text-zinc-400">
-                    This removes every generated site from the shelf. Download them first — selling happens after you keep them.
+                    This removes every generated site from the shelf. Download them first — selling happens after you keep them. A new cycle starts immediately and the beast commissions fresh work.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel className="border-zinc-700 bg-transparent hover:bg-zinc-800">Keep</AlertDialogCancel>
-                  <AlertDialogAction className="bg-red-600 hover:bg-red-500" onClick={() => act({ action: 'clear' }, 'Workspace cleared — the beast starts fresh tomorrow.')}>Clear</AlertDialogAction>
+                  <AlertDialogAction className="bg-red-600 hover:bg-red-500" onClick={() => act({ action: 'clear' }, 'Workspace cleared — a new cycle begins')}>Clear</AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
@@ -299,6 +360,7 @@ export default function BeastPage() {
         <Tabs defaultValue="studio" className="gap-6">
           <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-900 p-1">
             <TabsTrigger value="studio" className="gap-1.5 data-[state=active]:bg-lime-300 data-[state=active]:text-zinc-950"><MonitorSmartphone className="h-4 w-4" /> Studio</TabsTrigger>
+            <TabsTrigger value="ai" className="gap-1.5 data-[state=active]:bg-lime-300 data-[state=active]:text-zinc-950"><Sparkles className="h-4 w-4" /> AI answers <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">{status?.transcript.length ?? 0}</Badge></TabsTrigger>
             <TabsTrigger value="blueprints" className="gap-1.5 data-[state=active]:bg-lime-300 data-[state=active]:text-zinc-950"><Ruler className="h-4 w-4" /> Blueprints · D1–D5</TabsTrigger>
             <TabsTrigger value="knowledge" className="gap-1.5 data-[state=active]:bg-lime-300 data-[state=active]:text-zinc-950"><BookOpen className="h-4 w-4" /> Knowledge</TabsTrigger>
             <TabsTrigger value="tests" className="gap-1.5 data-[state=active]:bg-lime-300 data-[state=active]:text-zinc-950"><FlaskConical className="h-4 w-4" /> Test Center</TabsTrigger>
@@ -306,44 +368,100 @@ export default function BeastPage() {
 
           {/* ================= STUDIO ================= */}
           <TabsContent value="studio" className="space-y-6">
-            {/* progress schedule */}
+            {/* live progress — the loading bar with the exact ledger */}
             <Card className="border-zinc-800 bg-zinc-900/60">
-              <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
+              <CardHeader className="flex-row items-start justify-between space-y-0 pb-3">
                 <div>
-                  <CardTitle className="text-lg">Daily progress schedule</CardTitle>
-                  <p className="mt-1 text-sm text-zinc-400">One stage per site per day — it takes its time, like a human would. Missed days are replayed automatically.</p>
+                  <CardTitle className="text-lg">Live progress — the whole ledger, exactly as it is</CardTitle>
+                  <p className="mt-1 text-sm text-zinc-400">
+                    The beast works continuously and exhausts every pending task. No simulated days — every line below is a real execution.
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <Button size="sm" variant="outline" className="border-lime-300/40 font-semibold text-lime-300 hover:bg-lime-300/10" disabled={busy} onClick={() => act({ action: 'work' }, 'Ledger drained — every pending task executed')}>
+                    <Play className="h-4 w-4" /> <span className="hidden sm:inline">Work now</span>
+                  </Button>
+                  <Button size="sm" variant="outline" className="border-zinc-700 hover:bg-zinc-800" disabled={busy} onClick={() => act({ action: 'commission' }, 'New site commissioned')}>
+                    <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Commission</span>
+                  </Button>
                 </div>
               </CardHeader>
-              <CardContent className="grid gap-4 lg:grid-cols-2">
+              <CardContent className="space-y-4">
+                {/* the loading bar */}
+                <div>
+                  <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-sm">
+                    <span className="font-semibold text-zinc-200">
+                      {doneTasks.length}/{totalTasks} tasks done
+                      <span className="ml-2 font-normal text-zinc-500">· {pendingTasks.length} pending{deferredCount ? ` · ${deferredCount} deferred` : ''}</span>
+                    </span>
+                    <span className="font-mono text-lime-300">{globalPct}%</span>
+                  </div>
+                  <Progress value={globalPct} className="h-3 bg-zinc-800 [&>[data-slot=progress-indicator]]:bg-lime-300" />
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {/* pending — exact order */}
+                  <div className="space-y-2">
+                    <Mono>pending tasks — in execution order</Mono>
+                    <ScrollArea className="h-56 rounded-lg border border-zinc-800 bg-zinc-950 p-3">
+                      {pendingTasks.length === 0 && (
+                        <p className="text-sm text-zinc-500">
+                          {status?.working ? 'Working — draining the last pending tasks…' : 'Nothing pending. Commission a site to feed the beast.'}
+                        </p>
+                      )}
+                      <ul className="space-y-1.5">
+                        {pendingTasks.slice(0, 40).map((x, i) => (
+                          <TaskRow key={x.t.id} t={x.t} brand={x.brand} />
+                        ))}
+                      </ul>
+                    </ScrollArea>
+                  </div>
+                  {/* done — newest first */}
+                  <div className="space-y-2">
+                    <Mono>done tasks — newest first</Mono>
+                    <ScrollArea className="h-56 rounded-lg border border-zinc-800 bg-zinc-950 p-3">
+                      {doneTasks.length === 0 && <p className="text-sm text-zinc-500">No task finished yet — the first executions appear here the moment they happen.</p>}
+                      <ul className="space-y-1.5">
+                        {doneTasks.slice(0, 40).map((x) => (
+                          <TaskRow key={x.t.id} t={x.t} brand={x.brand} />
+                        ))}
+                      </ul>
+                    </ScrollArea>
+                  </div>
+                </div>
+
+                {/* the actual log */}
+                <div className="space-y-2">
+                  <Mono>the actual log — every execution, real timestamps</Mono>
+                  <ScrollArea className="h-48 rounded-lg border border-zinc-800 bg-zinc-950 p-3">
+                    {status?.log.length ? (
+                      <ul className="space-y-1">
+                        {status.log.slice(0, 80).map((ev, i) => <LogLine key={i} ev={ev} />)}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-zinc-500">The log is empty — it fills as the beast executes.</p>
+                    )}
+                  </ScrollArea>
+                </div>
+
+                {/* in studio now */}
                 <div className="space-y-3">
                   <Mono>in the studio now</Mono>
-                  {active.length === 0 && <p className="text-sm text-zinc-500">Studio empty — next commission arrives with the next work day.</p>}
-                  {active.map((s) => (
-                    <div key={s.id} className="rounded-lg border border-zinc-800 bg-zinc-950 p-3">
-                      <div className="mb-2 flex items-center justify-between gap-2">
-                        <div className="font-semibold">{s.brand}</div>
-                        <Swatches colors={s.palette.swatches} />
-                      </div>
-                      <StageTrack stages={status!.stages} site={s} />
-                    </div>
-                  ))}
-                </div>
-                <div className="space-y-3">
-                  <Mono>work log</Mono>
-                  <ScrollArea className="h-56 rounded-lg border border-zinc-800 bg-zinc-950 p-3">
-                    <div className="space-y-3">
-                      {status?.log.map((d) => (
-                        <div key={d.day}>
-                          <div className="mb-1 font-mono text-[11px] text-lime-300">DAY {d.day} · {d.date}</div>
-                          <ul className="space-y-0.5">
-                            {d.jobs.map((j, i) => (
-                              <li key={i} className="text-[13px] leading-snug text-zinc-400">· {j}</li>
-                            ))}
-                          </ul>
+                  {active.length === 0 && <p className="text-sm text-zinc-500">Studio floor empty — press Commission to start a site.</p>}
+                  <div className="grid gap-3 md:grid-cols-3">
+                    {active.map((s) => (
+                      <div key={s.id} className="rounded-lg border border-zinc-800 bg-zinc-950 p-3">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="truncate font-semibold">{s.brand}</div>
+                            <div className="truncate text-[11px] text-zinc-500">{s.nicheLabel} · {s.city}</div>
+                          </div>
+                          <Swatches colors={s.palette.swatches} />
                         </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
+                        <StageTrack stages={status!.stages} site={s} />
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -360,7 +478,7 @@ export default function BeastPage() {
               {shelf.length === 0 && (
                 <Card className="border-dashed border-zinc-800 bg-transparent">
                   <CardContent className="py-10 text-center text-sm text-zinc-500">
-                    The shelf is empty right now. Sites land here after the 7-stage pipeline — press “Force work day” to watch a stage complete.
+                    The shelf is empty. Sites land here the moment their pipeline finishes — the beast works continuously, or press “Work now” to drain everything immediately.
                   </CardContent>
                 </Card>
               )}
@@ -401,6 +519,61 @@ export default function BeastPage() {
                 ))}
               </div>
             </div>
+          </TabsContent>
+
+          {/* ================= AI ANSWERS ================= */}
+          <TabsContent value="ai" className="space-y-4">
+            <Card className="border-zinc-800 bg-zinc-900/60">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex flex-wrap items-center gap-2 text-lg">
+                  <Sparkles className="h-5 w-5 text-lime-300" /> AI answers — raw response, meaning, next action
+                  <Badge variant="outline" className={status?.ai.enabled ? 'border-lime-300/40 font-mono text-lime-300' : 'border-zinc-700 font-mono text-zinc-400'}>
+                    {status?.ai.enabled ? 'AI enabled' : 'solver floor — no keys configured'}
+                  </Badge>
+                </CardTitle>
+                <p className="text-sm text-zinc-400">
+                  Every answer the studio receives, exactly as it arrived, with what it means and what happened next. Nothing enters a site without passing its gates.
+                </p>
+              </CardHeader>
+            </Card>
+
+            {!status?.ai.enabled && (
+              <Card className="border-zinc-800 bg-zinc-900/60">
+                <CardContent className="p-4 text-sm text-zinc-400">
+                  No AI key vault is configured right now — every task runs on the deterministic solver floor and is logged honestly as such.
+                  The moment keys are set (<span className="font-mono text-[12px] text-lime-300/80">BEAST_AI_VAULT</span>), live AI responses appear here.
+                </CardContent>
+              </Card>
+            )}
+
+            <Card className="border-zinc-800 bg-zinc-900/60">
+              <CardHeader className="pb-2"><CardTitle className="text-base">Every answer, interpreted — newest first</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                {(status?.transcript.length ?? 0) === 0 && <p className="text-xs text-zinc-500">No turns yet — the first executions will land here as they happen.</p>}
+                {status?.transcript.slice(0, 40).map((t) => (
+                  <details key={t.id} className="group rounded-lg border border-zinc-800 p-3">
+                    <summary className="cursor-pointer list-none">
+                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                        <Badge variant={VERDICT_STYLE[t.verdict] ?? 'secondary'}>{t.verdict}</Badge>
+                        <Badge variant="outline" className="text-zinc-400">{t.provider}</Badge>
+                        <Badge variant="outline" className="text-zinc-500">{t.mode}</Badge>
+                        <span className="font-medium text-zinc-200">{t.taskTitle}</span>
+                        <span className="text-zinc-500">· {Math.round(t.precision * 100)}% · {new Date(t.at).toLocaleTimeString()}</span>
+                      </div>
+                      <div className="mt-1.5 text-xs text-zinc-400"><b className="text-zinc-300">It means:</b> {t.interpretation}</div>
+                      <div className="mt-0.5 text-xs text-sky-400"><b>Next action:</b> {t.action}</div>
+                      <div className="mt-1 flex items-center gap-1 text-[11px] text-zinc-600 group-open:hidden"><ChevronDown className="h-3 w-3" /> show raw answer + envelope</div>
+                    </summary>
+                    <Separator className="my-2 bg-zinc-800" />
+                    <div className="text-[11px] text-zinc-500">WHY: {t.promptTitle}</div>
+                    <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded border border-zinc-800 bg-zinc-950 p-2 text-[10px] leading-relaxed text-zinc-400">{t.raw}</pre>
+                    <details className="mt-1"><summary className="cursor-pointer text-[10px] text-zinc-600">envelope sent</summary>
+                      <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded border border-zinc-800 bg-zinc-950 p-2 text-[10px] text-zinc-500">{t.envelope}</pre>
+                    </details>
+                  </details>
+                ))}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* ================= BLUEPRINTS ================= */}
@@ -526,7 +699,7 @@ export default function BeastPage() {
             <Card className="border-zinc-800 bg-zinc-900/60">
               <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><PaletteIcon className="h-5 w-5 text-lime-300" /> Colour, interface & themes — the curriculum</CardTitle></CardHeader>
               <CardContent className="space-y-2 text-sm text-zinc-300">
-                <p><b>Deliberate slowness:</b> one decision per stage, logged. Brief → palette → wireframe → build → polish → QA → stamp. No stage skips ahead.</p>
+                <p><b>Deliberate order:</b> brief → palette → wireframe → build → polish → QA → stamp. Every task passes its gates before the output freezes — nothing ships unfinished.</p>
                 <p><b>Colour:</b> harmony math (analogous / complementary / triadic / split / tetradic / monochrome), hue families named, then contrast-corrected — never sampled by “vibe”.</p>
                 <p><b>Interface:</b> 4/8px spacing scale, ≥44px touch targets, focus-visible rings, fluid type with clamp(), semantic landmarks (header/main/section/footer).</p>
                 <p><b>Themes:</b> light / dark / duotone are token sets, not colour swaps — every token re-derives per theme with its own contrast pass.</p>
@@ -549,13 +722,14 @@ export default function BeastPage() {
             <Card className="border-zinc-800 bg-zinc-900/60">
               <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Layers className="h-5 w-5 text-lime-300" /> Business loop</CardTitle></CardHeader>
               <CardContent className="space-y-2 text-sm text-zinc-300">
-                <p>1. The beast builds ≤ 3 sites in parallel, one stage each per day — quality over hurry.</p>
+                <p>1. The beast builds up to 3 sites in parallel and drains the ledger until nothing is pending — every task real, every task logged.</p>
                 <p>2. Finished sites land on the shelf with your © + year baked into every page and licence file.</p>
                 <p>3. You preview on all five device classes, download the ZIP, sell it.</p>
-                <p>4. Clear the workspace; the next work day starts fresh commissions. The queue never empties.</p>
+                <p>4. Clear the workspace; a new cycle starts and the beast immediately commissions fresh work. The queue never empties.</p>
               </CardContent>
             </Card>
           </TabsContent>
+
           {/* ================= TEST CENTER ================= */}
           <TabsContent value="tests" className="space-y-6">
             <Card className="border-zinc-800 bg-zinc-900/60">
@@ -564,7 +738,7 @@ export default function BeastPage() {
                   <CardTitle className="flex items-center gap-2 text-lg"><FlaskConical className="h-5 w-5 text-lime-300" /> Feature-by-feature verification</CardTitle>
                   <p className="mt-1 text-sm text-zinc-400">
                     The whole beast, tested: generator determinism, the D1–D5 structural breakpoint law, WCAG contrast (light <em>and</em> dark),
-                    © injection, uniqueness, motifs, accessibility, the layout book, and the full daily engine — run against a throwaway sandbox,
+                    © injection, uniqueness, motifs, accessibility, the layout book, and the truthful work engine — run against a throwaway sandbox,
                     never touching the live studio. The same suite ships as <span className="font-mono text-[12px] text-lime-300/80">scripts/test-beast.ts</span>.
                   </p>
                 </div>
@@ -662,7 +836,7 @@ export default function BeastPage() {
       {/* ================= FOOTER ================= */}
       <footer className="mt-auto border-t border-zinc-800 bg-zinc-950">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-4 md:px-6 pb-[max(1rem,env(safe-area-inset-bottom))]">
-          <Mono>beast.studio — builds slowly, ships daily</Mono>
+          <Mono>beast.studio — real work, real logs, nothing simulated</Mono>
           <Mono>© {new Date().getFullYear()} {status?.owner ?? 'Beast Studio'} · all generated sites carry this stamp</Mono>
         </div>
       </footer>

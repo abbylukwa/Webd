@@ -1,5 +1,0 @@
-# robots.txt — The Cedar Brass
-User-agent: *
-Allow: /
-
-Sitemap: https://thecedarbrass.site/sitemap.xml

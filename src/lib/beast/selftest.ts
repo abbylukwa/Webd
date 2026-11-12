@@ -1,13 +1,14 @@
-// Beast Self-Test v3 — every feature, tested feature-by-feature.
+// Beast Self-Test v4 — every feature, tested feature-by-feature.
 // Groups:
 //   A · Generator (pure): determinism, D1–D5, structure, SEO, WCAG, dark mode,
 //       copyright, uniqueness/infinity, motifs, a11y, attribution, image queries
 //   B · Design knowledge: layout book (12 core + 20+ per device), device law,
 //       12-book library, stage law, niche grammar, page-map law, task-graph law
-//   C · Engine (sandboxed, v3): micro-task pipeline, one-task-per-day law,
-//       shipped-site disk truth, QA record, values caps, contact realism,
-//       multi-page ZIP, AI contract, interpretation ledger, GitHub defer law,
-//       day catch-up, workspace ops, values editor, fresh-start purge, warm-up flag
+//   C · Engine (sandboxed, v4): truthful work engine — boot, budgeted drain,
+//       exhaustion, real timestamped logs, shipped-site disk truth, QA record,
+//       values caps, contact realism, multi-page ZIP, AI contract,
+//       interpretation ledger, GitHub defer law, idle truth + refill,
+//       workspace ops, values editor, fresh-start purge, vault adoption
 // The engine tests redirect BEAST_DATA_DIR to a throwaway temp dir and force the
 // offline floor (BEAST_IMAGES=0), so the live studio state is never touched and
 // no network is needed. The same suite runs in-app (Test Center → /api/beast/test)
@@ -28,7 +29,7 @@ import { attributionMarkdown, nicheImageQueries } from './images';
 import { buildEnvelope, interpretAnswer } from './ai';
 import { siteRepoName, VAULT_REPO } from './storage';
 import { planPagesFor, expandAfterPlan } from './tasks';
-import type { BeastState, BeastSite } from './engine';
+import type { BeastState } from './engine';
 
 export type TestResult = {
   id: string;
@@ -327,35 +328,44 @@ async function testEngine(): Promise<TestResult[]> {
     state.owner = 'Test Owner'; // stamps © with a name the suite can assert on
 
     // -- fresh start law (the placeholder purge) ---------------------------
-    results.push(check('C0', 'C · Engine (sandboxed)', 'Fresh start law — v3 opens an EMPTY studio (placeholder sim sites are gone)',
-      state.version === engine.ENGINE_VERSION && state.day === 0 && state.sites.length === 0,
-      `version ${state.version}, day ${state.day}, ${state.sites.length} sites — the ledger earns every site task by task`));
+    results.push(check('C0', 'C · Engine (sandboxed)', 'Fresh start law — v4 opens an EMPTY studio, no placeholders, no simulated days',
+      state.version === engine.ENGINE_VERSION && state.cycle === 1 && state.sites.length === 0 && !('day' in state),
+      `version ${state.version}, cycle ${state.cycle}, ${state.sites.length} sites — every task ahead is real work`));
 
-    // -- lifecycle: 9 work days --------------------------------------------
-    for (let d = 1; d <= 9; d++) await engine.runWorkDay(state, `2036-01-${String(d).padStart(2, '0')}`);
-    const shipped = state.sites.filter((s) => s.status === 'for-sale');
-    const inStudio = state.sites.filter((s) => s.status === 'in-studio');
-    results.push(check('C1', 'C · Engine (sandboxed)', 'Micro-task pipeline — 9 days, 3 parallel commissions, first shelf candidates advancing',
-      state.day === 9 && inStudio.length === engine.CONCURRENCY && state.sites.every((s) => s.tasks.length > 0),
-      `9 days run → ${state.sites.length} commissioned, ${inStudio.length}/${engine.CONCURRENCY} in studio, day counter = ${state.day}`));
+    // -- boot law: an empty floor commissions immediately --------------------
+    const added = engine.bootStudio(state);
+    results.push(check('C1', 'C · Engine (sandboxed)', 'Boot law — an empty studio commissions its first batch instantly, all tasks queued',
+      added === engine.CONCURRENCY && state.sites.length === engine.CONCURRENCY &&
+      state.sites.every((s) => s.status === 'in-studio' && s.tasks.some((t) => t.status === 'queued')),
+      `${added} sites commissioned on boot · ${state.sites.reduce((n, s) => n + s.tasks.filter((t) => t.status === 'queued').length, 0)} real tasks queued`));
 
-    // -- one-task-per-day law ----------------------------------------------
-    const before = new Map(inStudio.map((s) => [s.id, s.tasks.filter((t) => t.status === 'accepted').length]));
-    await engine.runWorkDay(state, '2036-01-10');
-    const after = state.sites.filter((s) => s.status === 'in-studio');
-    const lawOk = after.every((s) => {
-      const b = before.get(s.id) ?? 0;
-      const a = s.tasks.filter((t) => t.status === 'accepted').length;
-      return a === b + 1 || s.tasks.every((t) => t.status !== 'queued');
-    });
-    results.push(check('C1b', 'C · Engine (sandboxed)', 'One-task-per-day law — each site advances EXACTLY one micro-task per work day',
-      lawOk, lawOk ? `every in-studio site +1 accepted task on day 10 (perfect one task, then rest)` : 'a site advanced more than one task'));
+    // -- budgeted drain: a work slice executes exactly its budget ------------
+    const slice = await engine.runStudio(state, { maxTasks: 7 });
+    results.push(check('C1b', 'C · Engine (sandboxed)', 'Budgeted drain — a work slice executes exactly its budget and reports the honest remainder',
+      slice.executed === 7 && slice.remaining > 0,
+      `7 tasks executed, ${slice.remaining} still queued — the report matches the ledger exactly`));
+
+    // -- exhaustion law: one command drains the WHOLE ledger ------------------
+    const drain = await engine.runStudio(state);
+    const allSettled = state.sites.every((s) => s.tasks.every((t) => t.status !== 'queued' && t.status !== 'running'));
+    results.push(check('C1c', 'C · Engine (sandboxed)', 'Exhaustion law — the drain runs until NOTHING is pending: every task accepted or honestly deferred',
+      drain.remaining === 0 && allSettled && drain.executed >= slice.remaining &&
+      state.sites.every((s) => s.status === 'for-sale' && s.price > 0),
+      `${drain.executed} tasks executed in one drain (incl. plan expansions) · 0 queued left · ${state.sites.length} sites stamped and shelved`));
 
     const first = state.sites[0];
     const accepted = first.tasks.filter((t) => t.status === 'accepted');
-    results.push(check('C1c', 'C · Engine (sandboxed)', 'Task ledger integrity — accepted tasks carry precision + acceptance day',
-      accepted.length >= 8 && accepted.every((t) => t.precision > 0 && typeof t.acceptedDay === 'number'),
-      `${first.brand}: ${accepted.length} accepted tasks, all carrying precision > 0 + acceptedDay`));
+    results.push(check('C1d', 'C · Engine (sandboxed)', 'Task ledger integrity — accepted tasks carry precision + a real ISO acceptance timestamp',
+      accepted.length >= 8 && accepted.every((t) => t.precision > 0 && typeof t.acceptedAt === 'string' && !Number.isNaN(Date.parse(t.acceptedAt))),
+      `${first.brand}: ${accepted.length} accepted tasks, all carrying precision > 0 + acceptedAt ISO`));
+
+    // -- the actual log: real events, real timestamps, no day fiction --------
+    const logOk = state.log.length >= 20 &&
+      state.log.every((l) => typeof l.at === 'string' && !Number.isNaN(Date.parse(l.at)) &&
+        ['info', 'done', 'warn', 'error'].includes(l.level) && l.message.length > 0) &&
+      !('day' in (state.log[0] as unknown as Record<string, unknown>));
+    results.push(check('C1e', 'C · Engine (sandboxed)', 'Log truth — every entry is a real execution event with an ISO timestamp, never grouped by day',
+      logOk, `${state.log.length} timestamped events (${state.log.filter((l) => l.level === 'done').length} done · ${state.log.filter((l) => l.level === 'warn').length} warn) — no day field anywhere`));
 
     // -- interpretation ledger (the AI transcript) --------------------------
     const tOk = state.transcript.length >= 5 &&
@@ -365,15 +375,7 @@ async function testEngine(): Promise<TestResult[]> {
       tOk && solverAccepts >= 3,
       `${state.transcript.length} turns logged · ${solverAccepts} solver ACCEPTs ≥0.85 precision · every turn explains what happened next`));
 
-    // -- shipped site disk truth (needs ~60 task-days; fast-forward the ledger)
-    const fastForward = async (site: BeastSite) => {
-      for (let i = 0; i < 90; i++) {
-        if (site.status === 'for-sale') break;
-        await engine.runTaskNow(state, site.id);
-      }
-    };
-    const candidate = state.sites.find((s) => s.status === 'in-studio');
-    if (candidate) await fastForward(candidate);
+    // -- shipped site disk truth (the full drain already ran the pipeline) ----
     const shippedNow = state.sites.find((s) => s.status === 'for-sale');
     if (shippedNow) {
       const dir = path.join(sandbox, 'sites', shippedNow.id);
@@ -389,7 +391,9 @@ async function testEngine(): Promise<TestResult[]> {
       const art: RenderArt = { ...shippedNow.art, pages: shippedNow.art.pages ?? [] } as RenderArt;
       const contact = renderInnerPage(shippedNow.seed, state.owner, 'contact', { art, currentKey: 'contact' });
       const vals = shippedNow.art.values!;
-      const telCount = (contact.match(/href="tel:/g) || []).length;
+      // the cap law is about distinct phone LINES; the sticky "Call" CTA repeats
+      // the primary number, so count unique dialled numbers, not raw hrefs
+      const telCount = new Set((contact.match(/href="tel:([+\d]+)/g) || []).map((m) => m.replace('href="tel:', ''))).size;
       const jsonLdMatch = contact.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
       let contactPoints = -1;
       try {
@@ -440,7 +444,7 @@ async function testEngine(): Promise<TestResult[]> {
       results.push(check('C5b', 'C · Engine (sandboxed)', 'Download-all ZIP — every site folder + catalog with archive links',
         allOk, allOk ? 'catalog.txt carries © + archive column' : 'zip-all broken'));
     } else {
-      results.push(check('C1d', 'C · Engine (sandboxed)', 'Shipped site disk truth', false, 'no site shipped after 90 forced task-days — pipeline stalled'));
+      results.push(check('C1f', 'C · Engine (sandboxed)', 'Shipped site disk truth', false, 'no site shipped after the full drain — pipeline stalled'));
     }
 
     // -- QA record -----------------------------------------------------------
@@ -504,13 +508,13 @@ async function testEngine(): Promise<TestResult[]> {
     results.push(check('C8', 'C · Engine (sandboxed)', 'GitHub archive law — auto-named repos (beast-site-<slug>-<seed6>); no token defers, never blocks',
       namingOk && ghOk, `repo name "${repoName}" · publish task ${ghTask ? ghTask.status : 'n/a'} — the studio keeps working without a token`));
 
-    // -- day catch-up --------------------------------------------------------------
-    const lagging: BeastState = { ...state, day: 5, lastRealTick: new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10), sites: [], log: [], transcript: [] };
-    const ran = await engine.tick(lagging);
-    const ranAgain = await engine.tick(lagging);
-    results.push(check('C9', 'C · Engine (sandboxed)', 'Day catch-up — missed real days replayed on wake-up, then idles',
-      ran.length === 3 && ranAgain.length === 0 && lagging.day === 8,
-      `3 missed days → replayed ${ran.length} work days (day 5→${lagging.day}); second tick idle: ${ranAgain.length === 0}`));
+    // -- idle truth + refill (replaces day catch-up) --------------------------
+    const idle = await engine.runStudio(state);
+    const refilled = engine.topUp(state);
+    results.push(check('C9', 'C · Engine (sandboxed)', 'Idle truth — a drained ledger costs nothing; topUp refills the floor with fresh commissions',
+      idle.executed === 0 && idle.remaining === 0 && refilled === engine.CONCURRENCY &&
+      state.sites.filter((s) => s.status === 'in-studio').length === engine.CONCURRENCY,
+      `idle drain executed 0 · topUp commissioned ${refilled} → ${engine.CONCURRENCY} sites in studio, all queued for real work`));
 
     // -- workspace ops ---------------------------------------------------------------
     const st1: BeastState = { ...state };
@@ -526,33 +530,35 @@ async function testEngine(): Promise<TestResult[]> {
       ownerOk && deleted && afterDelete === beforeDel - 1 && st1.sites.length === 0 && dirsLeft === 0,
       `owner → "Renamed Owner" · deleted 1 of ${beforeDel} · clear → 0 sites, 0 dirs left on disk`));
 
-    // -- fresh-start purge (v2 state file must not survive) ----------------------------
-    fs.writeFileSync(path.join(sandbox, 'beast-state.json'), JSON.stringify({ version: 2, day: 44, sites: [{ id: 'sim-ghost' }], log: [], transcript: [] }));
+    // -- fresh-start purge (any older state file must not survive) ----------------------
+    fs.writeFileSync(path.join(sandbox, 'beast-state.json'), JSON.stringify({ version: 3, day: 44, sites: [{ id: 'sim-ghost' }], log: [], transcript: [] }));
     const purged = engine.loadState();
-    results.push(check('C12', 'C · Engine (sandboxed)', 'Placeholder purge — any pre-v3 state file is wiped, the studio restarts clean',
-      purged.version === 3 && purged.day === 0 && purged.sites.length === 0,
-      `v2 state (day 44, 1 ghost site) → v3 day ${purged.day}, ${purged.sites.length} sites`));
+    results.push(check('C12', 'C · Engine (sandboxed)', 'Placeholder purge — any pre-v4 state file (the day-theater ledger) is wiped, the studio restarts clean',
+      purged.version === engine.ENGINE_VERSION && purged.cycle === 1 && purged.sites.length === 0,
+      `v3 state (day 44, 1 ghost site) → v4 cycle ${purged.cycle}, ${purged.sites.length} sites`));
 
-    // -- warm-up flag is opt-in ----------------------------------------------------------
+    // -- no warm-up path: BEAST_WARMUP is ignored, the studio is always truthful -------
     fs.rmSync(path.join(sandbox, 'beast-state.json'), { force: true });
     process.env.BEAST_WARMUP = '1';
     const warm = engine.loadState();
     delete process.env.BEAST_WARMUP;
-    fs.rmSync(path.join(sandbox, 'beast-state.json'), { force: true }); // cold start must read its own file, not warm-up's
-    const cold = engine.loadState();
-    const warmOk = warm.log.some((l) => l.jobs.some((j) => j.includes('Warm-up'))) && cold.log.some((l) => l.jobs.some((j) => j.includes('fresh start')));
-    results.push(check('C13', 'C · Engine (sandboxed)', 'Warm-up is opt-in — default is the empty studio; BEAST_WARMUP=1 replays demo days',
-      warmOk, `BEAST_WARMUP=1 → "${warm.log[0].jobs[0].slice(0, 40)}…" · default → "${cold.log[0].jobs[0].slice(0, 40)}…"`));
+    const warmOk = warm.version === engine.ENGINE_VERSION && warm.sites.length === 0 &&
+      !warm.log.some((l) => l.message.toLowerCase().includes('warm')) &&
+      warm.log.some((l) => l.message.includes('truthful'));
+    results.push(check('C13', 'C · Engine (sandboxed)', 'No placeholder paths — BEAST_WARMUP is ignored; the studio opens empty and truthful, always',
+      warmOk, `BEAST_WARMUP=1 → still an empty truthful studio: "${warm.log[0].message.slice(0, 48)}…"`));
 
     // -- vault adoption (durable memory across deploys) ---------------------------------
-    const vaultState: BeastState = { ...state, day: 21, sites: state.sites.slice(0, 1), log: [{ day: 21, date: '2036-02-01', jobs: ['vaulted'] }], transcript: state.transcript.slice(0, 2) };
-    const fresh = engine.loadState(); // empty studio (file was written by C13's cold load)
+    fs.rmSync(path.join(sandbox, 'beast-state.json'), { force: true });
+    const vaultState: BeastState = { ...state, cycle: 7, sites: state.sites.slice(0, 1), log: [{ at: new Date().toISOString(), message: 'vaulted', level: 'info' }], transcript: state.transcript.slice(0, 2) };
+    const fresh = engine.loadState(); // empty studio (file was removed above)
     const adopted = await engine.adoptVaultState(fresh, async () => JSON.stringify(vaultState));
-    const cold2: BeastState = { version: engine.ENGINE_VERSION, day: 0, lastRealTick: null, owner: 'Test Owner', sites: [], log: [], transcript: [] };
+    fs.rmSync(path.join(sandbox, 'beast-state.json'), { force: true });
+    const cold2 = engine.loadState();
     const wrongVersion = await engine.adoptVaultState(cold2, async () => JSON.stringify({ ...vaultState, version: 2 }));
     results.push(check('C14', 'C · Engine (sandboxed)', 'Vault adoption — a cold empty studio adopts the vaulted ledger; foreign versions rejected',
-      adopted && fresh.day === 21 && fresh.sites.length === 1 && !wrongVersion,
-      `empty studio → DAY ${fresh.day} with ${fresh.sites.length} site(s) adopted from ${VAULT_REPO} · v2 payload rejected`));
+      adopted && fresh.cycle === 7 && fresh.sites.length === 1 && !wrongVersion,
+      `empty studio → cycle ${fresh.cycle} with ${fresh.sites.length} site(s) adopted from ${VAULT_REPO} · v2 payload rejected`));
   } finally {
     if (prevDir === undefined) delete process.env.BEAST_DATA_DIR;
     else process.env.BEAST_DATA_DIR = prevDir;

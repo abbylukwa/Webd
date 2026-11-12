@@ -15,13 +15,9 @@ const { validateValues, SOCIAL_PLATFORMS, MAX_PRODUCTS, MAX_PHONES } = await imp
 
 const state = engine.loadState();
 state.owner = 'Test Owner';
-for (let d = 1; d <= 9; d++) await engine.runWorkDay(state, `2036-01-${String(d).padStart(2, '0')}`);
+engine.bootStudio(state);
+await engine.runStudio(state); // drain the whole ledger — sites ship
 
-const candidate = state.sites.find((s) => s.status === 'in-studio');
-for (let i = 0; i < 90; i++) {
-  if (candidate.status === 'for-sale') break;
-  await engine.runTaskNow(state, candidate.id);
-}
 const site = state.sites.find((s) => s.status === 'for-sale');
 console.log('== shipped:', site?.brand, site?.status, 'price', site?.price, '©', site?.copyright);
 console.log('art.values keys:', site?.art.values ? Object.keys(site.art.values) : 'NULL');

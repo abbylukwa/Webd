@@ -1,5 +1,0 @@
-# robots.txt — EmberBind
-User-agent: *
-Allow: /
-
-Sitemap: https://emberbind.site/sitemap.xml
