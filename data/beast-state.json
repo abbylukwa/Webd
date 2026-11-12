@@ -1,6 +1,6 @@
 {
- "day": 12,
- "lastRealTick": "2026-11-11",
+ "day": 13,
+ "lastRealTick": "2026-11-12",
  "owner": "Beast Studio",
  "sites": [
   {
@@ -318,7 +318,7 @@
    "brand": "VelvetQuill",
    "nicheLabel": "bookbindery",
    "city": "Vesterby",
-   "stageIndex": 4,
+   "stageIndex": 5,
    "status": "in-studio",
    "price": 0,
    "startedDay": 8,
@@ -342,6 +342,10 @@
     {
      "day": 12,
      "entry": "VelvetQuill: built — semantic HTML, 7 sections, 5 structural breakpoints, sitemap+robots+404 packed"
+    },
+    {
+     "day": 13,
+     "entry": "VelvetQuill: polished — motion, focus rings, spacing rhythm, copy pass"
     }
    ],
    "design": {
@@ -373,7 +377,7 @@
    "brand": "NorthHearth",
    "nicheLabel": "neighbourhood bakery",
    "city": "Kirkwall",
-   "stageIndex": 4,
+   "stageIndex": 5,
    "status": "in-studio",
    "price": 0,
    "startedDay": 8,
@@ -397,6 +401,10 @@
     {
      "day": 12,
      "entry": "NorthHearth: built — semantic HTML, 7 sections, 5 structural breakpoints, sitemap+robots+404 packed"
+    },
+    {
+     "day": 13,
+     "entry": "NorthHearth: polished — motion, focus rings, spacing rhythm, copy pass"
     }
    ],
    "design": {
@@ -428,7 +436,7 @@
    "brand": "EmberBean",
    "nicheLabel": "coffee roastery",
    "city": "Marrow Bay",
-   "stageIndex": 4,
+   "stageIndex": 5,
    "status": "in-studio",
    "price": 0,
    "startedDay": 8,
@@ -452,6 +460,10 @@
     {
      "day": 12,
      "entry": "EmberBean: built — semantic HTML, 7 sections, 5 structural breakpoints, sitemap+robots+404 packed"
+    },
+    {
+     "day": 13,
+     "entry": "EmberBean: polished — motion, focus rings, spacing rhythm, copy pass"
     }
    ],
    "design": {
@@ -479,6 +491,15 @@
   }
  ],
  "log": [
+  {
+   "day": 13,
+   "date": "2026-11-12",
+   "jobs": [
+    "VelvetQuill: polished — motion, focus rings, spacing rhythm, copy pass",
+    "NorthHearth: polished — motion, focus rings, spacing rhythm, copy pass",
+    "EmberBean: polished — motion, focus rings, spacing rhythm, copy pass"
+   ]
+  },
   {
    "day": 12,
    "date": "sim-day-12",
