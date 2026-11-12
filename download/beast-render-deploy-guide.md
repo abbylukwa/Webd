@@ -1,11 +1,39 @@
 # Deploying the Beast Web Developer to Render
 
-Verified locally on 2026-11-11: `bun run build` exits 0, the standalone
-server boots in 62 ms with Render's exact start command, `/api/health`
-returns `200 {"ok":true}` and the control room root page returns `200`.
-The code in this repo is deployable. If the Render URL does not serve,
-the blocker is on the Render side — the triage below covers every cause
-observed so far, in order of likelihood.
+Verified locally: `bun run build` exits 0, the standalone server boots
+in 62 ms, `/api/health` returns `200 {"ok":true}` and the control room
+root page returns `200`.
+
+## ROOT CAUSE FOUND (Nov 12): the HOSTNAME binding trap
+
+Render's log signature was: build successful, then
+`No open ports detected, continuing to scan...`, and the Next.js banner
+printing the **pod hostname** (`srv-…-fct71:10000`) on both Local and
+Network instead of `0.0.0.0`.
+
+Mechanism, proven by reproduction:
+
+1. Render exports `HOSTNAME=<pod-hostname>` into the service environment.
+2. Next's standalone server binds to `process.env.HOSTNAME` when it is
+   set (repro: `HOSTNAME=srv-test-pod-abc123 node server.js` →
+   `getaddrinfo ENOTFOUND srv-test-pod-abc123` — it resolves and binds
+   that name; on Render the pod name resolves, so the server lives on an
+   interface Render's scanner never checks).
+3. Render sees no open port → the instance hibernates → the public URL
+   returns instant empty `502` while the dashboard shows the deploy as
+   live.
+
+**The fix (pick one, A is instant):**
+
+- **A. Dashboard:** Webd-1 → *Environment* → *Environment Variables* →
+  add `HOSTNAME` = `0.0.0.0` → Save. Render redeploys automatically and
+  the service comes up on the public interface.
+- **B. Repo:** this package.json already hardcodes it —
+  `"start": "HOSTNAME=0.0.0.0 NODE_ENV=production node .next/standalone/server.js"`
+  — so any start command of the form `bun run start` / `npm start` binds
+  correctly regardless of dashboard configuration.
+- The `render.yaml` Blueprint carries it as an env var for future
+  one-click deploys.
 
 ## Why whatsapp-qr-app works while this service 502s
 

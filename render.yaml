@@ -27,8 +27,12 @@ services:
       # but the cap prevents any surprise on busier days.
       - key: NODE_OPTIONS
         value: --max-old-space-size=400
-      # Harmless insurance: guarantees the server binds the public
-      # interface regardless of container-injected HOSTNAME values.
+      # REQUIRED — the root cause of the "No open ports detected" 502:
+      # Render exports HOSTNAME=<pod-hostname>, and Next's standalone
+      # server binds to it (proven Nov 12: banner shows the pod URL on
+      # both Local and Network, Render never sees the port, the service
+      # hibernates and the public URL 502s). Pin it to the public
+      # interface.
       - key: HOSTNAME
         value: 0.0.0.0
 
