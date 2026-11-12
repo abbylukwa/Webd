@@ -51,3 +51,10 @@ prompt
 server.log
 # Skills directory
 /skills/
+# Beast runtime state & local secrets — never ship
+/data/
+/db/custom.db
+/repo-scratch
+/tool-results/
+/.env
+/.deploy-token
