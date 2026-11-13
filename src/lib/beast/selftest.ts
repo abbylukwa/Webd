@@ -27,6 +27,7 @@ import { LIBRARY } from './knowledge';
 import { MAX_PHONES, MAX_PRODUCTS, validateValues, SOCIAL_PLATFORMS, type SiteValues } from './values';
 import { attributionMarkdown, nicheImageQueries, type ImageRecord } from './images';
 import { buildEnvelope, interpretAnswer } from './ai';
+import { detectProvider, providerBase, providerModel, type VaultKey } from './aipool';
 import { siteRepoName, VAULT_REPO } from './storage';
 import { planPagesFor, expandAfterPlan, planInitialTasks } from './tasks';
 import { COMPLAINT_CORPUS, scanComplaints, findingsToDemands, rulesForKind, composePersonas, reasonDevice, assignPageLayouts, layoutVariety, type PageLayoutAssignment } from './reasoner';
@@ -509,6 +510,16 @@ async function testEngine(): Promise<TestResult[]> {
       r3.verdict === 'REFINE' && /JSON/.test(r3.reason) && r4.verdict === 'ACCEPT' && r5.verdict === 'REFINE';
     results.push(check('C6', 'C · Engine (sandboxed)', 'AI contract — envelope carries WHY/RULES/KNOWLEDGE/STATE/CONTRACT; validator ACCEPTs only contract-true answers',
       aiOk, aiOk ? 'envelope complete · good heading ACCEPT · banned word REFINE · prose-only REFINE · 30-word body ACCEPT · 2-word body REFINE' : 'contract broken'));
+
+    // -- Provider routing (aggregators land on their own endpoints) ----------------
+    const rewindKey: VaultKey = { id: 'r', label: 'rewind', key: 'sk-rewind-abc123def456', addedAt: '2026-11-14' };
+    const rewindOk = detectProvider(rewindKey.key) === 'rewind'
+      && (providerBase('rewind') ?? '').includes('api.rewind.ai')
+      && providerModel('rewind', rewindKey) === 'qwen/qwen3.5-9b'
+      && providerModel('rewind', { ...rewindKey, model: 'openai/gpt-4o' }) === 'openai/gpt-4o'
+      && detectProvider('sk-1234567890abcdef') === 'openai'; // generic sk- still OpenAI
+    results.push(check('C6b', 'C · Engine (sandboxed)', 'Provider routing — sk-rewind keys map to api.rewind.ai with a per-key model override; generic sk- stays OpenAI',
+      rewindOk, rewindOk ? 'rewind → api.rewind.ai/v1/chat/completions · default qwen · override honored · sk- → openai' : 'routing broken'));
 
     // -- GitHub defer law (no token in sandbox) -----------------------------------
     const repoName = siteRepoName('Bloom & Slow', 'abcdef1234');

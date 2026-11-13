@@ -17,6 +17,8 @@ export interface VaultKey {
   label: string;
   key: string;
   addedAt: string;
+  model?: string; // optional per-key model override (aggregators expose many)
+  base?: string;  // optional OpenAI-compatible endpoint override — makes ANY aggregator work
 }
 
 export interface VaultKeyView {
@@ -29,8 +31,10 @@ export interface VaultKeyView {
 }
 
 // Provider auto-detection from key shape (repo doctrine)
+// NOTE: sk-rewind must be tested BEFORE the generic sk- (OpenAI) prefix.
 export function detectProvider(key: string): string {
   const k = key.trim();
+  if (k.startsWith("sk-rewind")) return "rewind";
   if (k.startsWith("sk-or-v1-")) return "openrouter";
   if (k.startsWith("sk-ant-")) return "anthropic";
   if (k.startsWith("sk-")) return "openai";
@@ -80,8 +84,9 @@ function revive(provider: string) {
   cooldowns.delete(provider);
 }
 
-function providerBase(provider: string): string | null {
+export function providerBase(provider: string): string | null {
   switch (provider) {
+    case "rewind": return "https://api.rewind.ai/v1/chat/completions/";
     case "openai": return "https://api.openai.com/v1/chat/completions";
     case "openrouter": return "https://openrouter.ai/api/v1/chat/completions";
     case "groq": return "https://api.groq.com/openai/v1/chat/completions";
@@ -92,8 +97,10 @@ function providerBase(provider: string): string | null {
   }
 }
 
-function providerModel(provider: string): string {
+export function providerModel(provider: string, key?: VaultKey): string {
+  if (key?.model && key.model.trim()) return key.model.trim(); // per-key override wins
   switch (provider) {
+    case "rewind": return "qwen/qwen3.5-9b"; // Rewind free tier: budget model, contract-shaped answers
     case "openai": return "gpt-4o-mini";
     case "openrouter": return "openai/gpt-4o-mini";
     case "groq": return "llama-3.1-8b-instant";
@@ -119,11 +126,12 @@ export async function callAiPool(
   const now = Date.now();
   const usable = vault.filter((k) => {
     const p = detectProvider(k.key);
-    return (cooldowns.get(p) ?? 0) <= now && providerBase(p) !== null;
+    return (cooldowns.get(p) ?? 0) <= now && (providerBase(p) !== null || !!k.base);
   });
   for (const k of usable) {
     const provider = detectProvider(k.key);
-    const base = providerBase(provider)!;
+    const base = k.base?.trim() || providerBase(provider);
+    if (!base) continue;
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -133,7 +141,7 @@ export async function callAiPool(
           method: "POST",
           signal: controller.signal,
           headers: { "content-type": "application/json", "x-api-key": k.key, "anthropic-version": "2023-06-01" },
-          body: JSON.stringify({ model: providerModel(provider), max_tokens: 300, system, messages: [{ role: "user", content: prompt }] }),
+          body: JSON.stringify({ model: providerModel(provider, k), max_tokens: 300, system, messages: [{ role: "user", content: prompt }] }),
         });
       } else if (provider === "gemini") {
         res = await fetch(base, {
@@ -148,7 +156,7 @@ export async function callAiPool(
           signal: controller.signal,
           headers: { "content-type": "application/json", authorization: `Bearer ${k.key}` },
           body: JSON.stringify({
-            model: providerModel(provider),
+            model: providerModel(provider, k),
             max_tokens: 300,
             messages: [
               { role: "system", content: system },

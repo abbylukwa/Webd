@@ -31,7 +31,10 @@ export function vaultKeys(): VaultKey[] {
 }
 
 export function aiEnabled(): boolean {
-  return process.env.BEAST_AI !== '0' && vaultKeys().some((k) => detectProvider(k.key) !== 'unknown' && detectProvider(k.key) !== 'custom');
+  return process.env.BEAST_AI !== '0' && vaultKeys().some((k) => {
+    const p = detectProvider(k.key);
+    return (p !== 'unknown' && p !== 'custom') || !!k.base; // a known provider, or an explicit endpoint
+  });
 }
 
 export type Envelope = { system: string; prompt: string; promptTitle: string };
