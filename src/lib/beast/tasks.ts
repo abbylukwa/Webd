@@ -1281,7 +1281,7 @@ function sizeCheck(ctx: TaskCtx, site: V3Site, dir: string): string {
   const { bytes, files } = dirSize(dir);
   const rounds = site.art.expansionRounds ?? 0;
   const mb = bytes / 1048576;
-  if (mb < 30 && rounds < 3) {
+  if (mb < 30 && rounds < 8) {
     site.art.expansionRounds = rounds + 1;
     const extra: Task[] = [];
     for (let i = 0; i < 16; i++) {

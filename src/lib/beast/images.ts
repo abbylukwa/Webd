@@ -35,7 +35,7 @@ async function timedFetch(url: string, init?: RequestInit): Promise<Response | n
 
 /* ---------- Openverse: anonymous, CC-licensed, attribution metadata ---------- */
 async function openverse(query: string, pickIndex: number): Promise<Partial<ImageRecord> | null> {
-  const api = `https://api.openverse.org/v1/images/?format=json&q=${encodeURIComponent(query)}&license=cc0,pdm,by,by-sa&page_size=8`;
+  const api = `https://api.openverse.org/v1/images/?format=json&q=${encodeURIComponent(query)}&license=cc0,pdm,by,by-sa&size=large&page_size=8`;
   const res = await timedFetch(api);
   if (!res) return null;
   try {
@@ -54,7 +54,7 @@ async function openverse(query: string, pickIndex: number): Promise<Partial<Imag
 async function wikimedia(query: string, pickIndex: number): Promise<Partial<ImageRecord> | null> {
   const api =
     `https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrsearch=` +
-    `${encodeURIComponent(query)}&gsrlimit=8&prop=imageinfo&iiprop=url|extmetadata&iiurlwidth=1200`;
+    `${encodeURIComponent(query)}&gsrlimit=8&prop=imageinfo&iiprop=url|extmetadata&iiurlwidth=1600`;
   const res = await timedFetch(api);
   if (!res) return null;
   try {

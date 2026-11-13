@@ -9,8 +9,8 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     service: 'beast-web-developer',
-    version: '4.0.0',
-    engine: 4,
+    version: '5.0.0',
+    engine: 5,
     time: new Date().toISOString(),
   });
 }
