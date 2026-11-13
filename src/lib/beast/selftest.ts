@@ -18,28 +18,35 @@ import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
 import JSZip from 'jszip';
-import { renderSite, renderInnerPage, renderSupportFiles, type RenderArt, type PagePlanEntry } from './render';
+import { renderSite, renderInnerPage, renderSupportFiles, renderProductPage, renderJournalPost, renderSitemapHtml, renderOfflineHtml, type RenderArt, type PagePlanEntry } from './render';
 import { buildPalette, deriveDarkTokens } from './palette';
 import { seedFrom } from './rng';
 import { DEVICE_CLASSES, STAGES, NICHES } from './spec';
 import { LAYOUTS, layoutsForDevice } from './layouts';
 import { LIBRARY } from './knowledge';
 import { MAX_PHONES, MAX_PRODUCTS, validateValues, SOCIAL_PLATFORMS, type SiteValues } from './values';
-import { attributionMarkdown, nicheImageQueries } from './images';
+import { attributionMarkdown, nicheImageQueries, type ImageRecord } from './images';
 import { buildEnvelope, interpretAnswer } from './ai';
 import { siteRepoName, VAULT_REPO } from './storage';
-import { planPagesFor, expandAfterPlan } from './tasks';
+import { planPagesFor, expandAfterPlan, planInitialTasks } from './tasks';
+import { COMPLAINT_CORPUS, scanComplaints, findingsToDemands, rulesForKind, composePersonas, reasonDevice, assignPageLayouts, layoutVariety, type PageLayoutAssignment } from './reasoner';
+import type { DeviceId } from './layouts';
+import { productFileFor, journalFileFor, defaultValues } from './values';
 import type { BeastState } from './engine';
 
 export type TestResult = {
   id: string;
-  group: 'A · Generator' | 'B · Design knowledge' | 'C · Engine (sandboxed)';
+  group: 'A · Generator' | 'B · Design knowledge' | 'C · Engine (sandboxed)' | 'D · Reasoner & v5 law';
   feature: string;
   pass: boolean;
   detail: string;
 };
 
 const YEAR = new Date().getFullYear();
+
+function money(v: number): string {
+  return v % 1 === 0 ? `$${v}` : `$${v.toFixed(2)}`;
+}
 
 function check(id: string, group: TestResult['group'], feature: string, ok: boolean, detail: string): TestResult {
   return { id, group, feature, pass: ok, detail };
@@ -278,14 +285,17 @@ function testPageMapLaw(): TestResult[] {
   const base = planPagesFor(probe);
   const withCatalog = { ...probe, art: { values: { products: Array.from({ length: 30 }, (_, i) => ({ name: `P${i}`, desc: 'd', price: 10 })) } } } as unknown as Parameters<typeof planPagesFor>[0];
   const big = planPagesFor(withCatalog);
+  const functional = ['search', 'login', 'signup', 'account', 'admin', 'thankyou'];
   const ok =
     base[0]?.key === 'home' &&
     base.some((p) => p.key === 'contact' && p.inNav) &&
+    base.some((p) => p.key === 'directory' && p.inNav) &&
     base.every((p) => p.file.endsWith('.html') && p.purpose.length > 3) &&
-    base.length <= 9 &&
+    base.length <= 16 &&
+    functional.every((k) => base.some((p) => p.key === k)) &&
     big.some((p) => p.key === 'products');
   return [
-    check('B6', 'B · Design knowledge', 'Page-map law — home first, contact mandatory & in nav, ≤9 pages, catalog earns Shop',
+    check('B6', 'B · Design knowledge', 'Page-map law — home first, contact + directory in nav, functional pages aboard, ≤16 pages, catalog earns Shop',
       ok, ok ? `base map ${base.length} pages (${base.map((p) => p.key).join('→')}); 30-product map adds products` : 'page-map law broken'),
   ];
 }
@@ -305,7 +315,7 @@ function testTaskGraphLaw(): TestResult[] {
     kinds.has('page.review') && kinds.has('qa.audit') && kinds.has('values.freeze') &&
     kinds.has('site.stamp') && kinds.has('github.publish') && kinds.has('contact.channels') && kinds.has('catalog.build');
   return [
-    check('B7', 'B · Design knowledge', 'Task-graph law — page.plan decomposes into governed micro-tasks (4 headings per page, build/review/QA/freeze/stamp/publish)',
+    check('B7', 'B · Design knowledge', 'Task-graph law — page.plan decomposes into governed micro-tasks (6 headings × 3 copy blocks per page, build/review/QA/freeze/stamp/publish)',
       ok, ok ? `${tasks.length} tasks from ${inner.length} inner pages · ${headings} headings · every task carries rules + knowledge + why` : 'decomposition law broken'),
   ];
 }
@@ -569,6 +579,176 @@ async function testEngine(): Promise<TestResult[]> {
   return results;
 }
 
+/* ============ GROUP D · Reasoner & v5 law ============ */
+
+function testReasonerCorpus(): TestResult[] {
+  const solid = COMPLAINT_CORPUS.every((c) =>
+    c.id.length > 3 && c.hate.length > 20 && c.source.length > 25 && c.demand.length > 20 && c.feeds.length >= 1);
+  const realSources = COMPLAINT_CORPUS.some((c) => c.source.includes('Nielsen Norman Group')) &&
+    COMPLAINT_CORPUS.some((c) => c.source.includes('Baymard')) &&
+    COMPLAINT_CORPUS.some((c) => c.source.includes('WCAG')) &&
+    COMPLAINT_CORPUS.some((c) => c.source.includes('Google'));
+  const scan1 = scanComplaints('corpus-seed', 'coffee', 'coffee roastery');
+  const scan2 = scanComplaints('corpus-seed', 'coffee', 'coffee roastery');
+  const scan3 = scanComplaints('other-seed', 'architecture', 'architecture studio');
+  const commerceBite = scanComplaints('corpus-seed', 'bakery', 'bakery').findings.some((f) => f.complaintId === 'hidden-prices');
+  return [
+    check('D1', 'D · Reasoner & v5 law', 'Review corpus — 24+ documented complaint themes, every one sourced and demanding',
+      COMPLAINT_CORPUS.length >= 24 && solid && realSources,
+      `${COMPLAINT_CORPUS.length} themes; sources include NN/g, Baymard, WCAG, Google speed research`),
+    check('D2', 'D · Reasoner & v5 law', 'The reasoner does its own research — scan is deterministic per seed and niche-sensitive',
+      scan1.findings.length === scan2.findings.length && scan1.scan === scan2.scan && scan1.findings.length >= 15 &&
+      JSON.stringify(scan1.findings.map((f) => f.complaintId)) !== JSON.stringify(scan3.findings.map((f) => f.complaintId)),
+      `coffee scan: ${scan1.findings.length} pains; architecture scan: ${scan3.findings.length} pains (different composition) — same seed reproduces byte-identical findings`),
+    check('D3', 'D · Reasoner & v5 law', 'Commerce pains bite where they should — hidden prices join for a bakery',
+      commerceBite, commerceBite ? 'hidden-prices in scope for a bakery; every finding carries its demand' : 'commerce pains missing'),
+  ];
+}
+
+function testDemandsInject(): TestResult[] {
+  const { findings } = scanComplaints('demand-seed', 'ceramics', 'ceramics workshop');
+  const { demands } = findingsToDemands(findings);
+  const byId = new Map(COMPLAINT_CORPUS.map((c) => [c.id, c]));
+  const popup = byId.get('popup-walls')!;
+  const rules = rulesForKind(findings, 'page.build');
+  const governed = demands.length === findings.length &&
+    rules.some((r) => r.includes('popup-walls')) &&
+    rulesForKind(findings, 'qa.speed').some((r) => r.includes('speed-death'));
+  const { personas, journeys } = composePersonas('persona-seed', findings, 'ceramics workshop', 'Kirkwall');
+  const deviceNotes = (['D1', 'D2', 'D3', 'D4', 'D5'] as const).map((d) => reasonDevice('dev-seed', d, 'ceramics workshop').note);
+  return [
+    check('D4', 'D · Reasoner & v5 law', 'Findings → demands → rules: the review laws are injected into the tasks they govern',
+      governed, `${demands.length} demands; popup-walls governs page.build; speed-death governs qa.speed`),
+    check('D5', 'D · Reasoner & v5 law', 'Personas and journeys compose from the findings; device reasoning names OS + input for D1–D5',
+      personas.length === 3 && journeys.length === 3 && personas.every((p) => p.device && p.goal.length > 10) &&
+      deviceNotes.every((n) => n.length > 60) && deviceNotes.join(' ').includes('iOS') && deviceNotes.join(' ').includes('Windows'),
+      `3 personas, 3 journeys; device notes cover iOS/Android, iPadOS, Windows/macOS/ChromeOS, TV`),
+  ];
+}
+
+function testLayoutVariety(): TestResult[] {
+  const devices: DeviceId[] = ['D1', 'D2', 'D3', 'D4', 'D5'];
+  const used: Record<DeviceId, Set<string>> = { D1: new Set(), D2: new Set(), D3: new Set(), D4: new Set(), D5: new Set() };
+  const pages = ['home', 'about', 'services', 'products', 'gallery', 'faq', 'contact', 'directory', 'journal', 'legal', 'search', 'login', 'signup', 'account', 'admin', 'thankyou']
+    .map((key) => ({ key, title: key }));
+  const palette = { name: 't', harmony: 'h', theme: 'light' as const, bg: '#ffffff', bgAlt: '#f4f4f4', surface: '#fff', ink: '#111111', inkSoft: '#444444', inkOnAccent: '#ffffff', accent: '#0a5ad0', accent2: '#d00a5a', border: '#ddd', report: [] };
+  const map: Record<string, PageLayoutAssignment> = {};
+  let allScan = '';
+  for (const p of pages) {
+    const { assignment, scan } = assignPageLayouts('variety-seed', p.key, pages, used, palette as never, 'ceramics', 'ceramics workshop', 21, 12);
+    map[p.key] = assignment;
+    allScan += scan;
+  }
+  const variety = layoutVariety(map);
+  const validIds = Object.values(map).every((a) => devices.every((d) => LAYOUTS.some((l) => l.id === a.devices[d].id)));
+  const distinctPerDevice = devices.every((d) => variety.perDevice[d] >= Math.min(pages.length, layoutsForDevice(d).length));
+  const complementarity = Object.values(map).every((a) =>
+    devices.every((d) => a.devices[d].colours.length > 40 && a.devices[d].productsNeeded.length > 10 && a.devices[d].deviceOs.length > 30 && a.devices[d].why.length > 30));
+  const seedB = (() => {
+    const used2: Record<DeviceId, Set<string>> = { D1: new Set(), D2: new Set(), D3: new Set(), D4: new Set(), D5: new Set() };
+    const m2: Record<string, PageLayoutAssignment> = {};
+    for (const p of pages) {
+      const { assignment } = assignPageLayouts('another-seed', p.key, pages, used2, palette as never, 'yoga', 'yoga atelier', 14, 12);
+      m2[p.key] = assignment;
+    }
+    return JSON.stringify(m2);
+  })();
+  return [
+    check('D6', 'D · Reasoner & v5 law', '16 pages × 5 devices — every assignment a valid book layout, distinct per device, no seed shares another’s map',
+      validIds && distinctPerDevice && JSON.stringify(map) !== seedB,
+      `${variety.distinct} distinct layouts used; per-device ${devices.map((d) => variety.perDevice[d]).join('/')}; seed B’s map differs`),
+    check('D7', 'D · Reasoner & v5 law', 'Complementarity described — every slot carries its colour law, product needs and device/OS assumptions',
+      complementarity && allScan.includes('scored'),
+      `e.g. D3 on about: “${map.about.devices.D3.colours.slice(0, 60)}…”`),
+  ];
+}
+
+function testV5Pages(): TestResult[] {
+  const values = defaultValues('v5pages-seed', 'V5 Brand', 'ceramics workshop', 'Kirkwall', 'the canal workshops', 'Courses & firings', 65, ['Wheel courses', 'Hand-building', 'Open studio hours', 'Member shelves', 'School visits', 'Commissions'], seedFrom('v5pages-values'));
+  const pages = planPagesFor({ seed: 'v5pages-seed', brand: 'V5 Brand', art: { values } } as never);
+  const art: RenderArt = { values, pages };
+  const catalog = values.products;
+  const productHtml = renderProductPage('v5pages-seed', 'T Owner', 0, { art });
+  const journalEntry = { title: 'A week at the wheel', kicker: 'Notes', body: ['Paragraph one with a fact: 12 bowls.', 'Paragraph two.'], date: 'March 2026' };
+  const artJ: RenderArt = { values, pages, journalEntries: [journalEntry] };
+  const postHtml = renderJournalPost('v5pages-seed', 'T Owner', 0, { art: artJ });
+  const searchHtml = renderInnerPage('v5pages-seed', 'T Owner', 'search', { art, currentKey: 'search' });
+  const adminHtml = renderInnerPage('v5pages-seed', 'T Owner', 'admin', { art, currentKey: 'admin' });
+  const loginHtml = renderInnerPage('v5pages-seed', 'T Owner', 'login', { art, currentKey: 'login' });
+  const signupHtml = renderInnerPage('v5pages-seed', 'T Owner', 'signup', { art, currentKey: 'signup' });
+  const dirHtml = renderInnerPage('v5pages-seed', 'T Owner', 'directory', { art, currentKey: 'directory' });
+  const sitemapHtml = renderSitemapHtml('v5pages-seed', 'T Owner', art, pages.map((p) => ({ file: p.file, title: p.title })), ['assets/hero.jpg']);
+  const offline = renderOfflineHtml('v5pages-seed');
+  let manifestOk = false;
+  try { const m = JSON.parse(renderSupportFiles('v5pages-seed', 'T Owner')['manifest.json']); manifestOk = !!m.name && Array.isArray(m.icons); } catch { manifestOk = false; }
+  let productLdOk = false;
+  try { const m = JSON.parse(productHtml.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)![1]); productLdOk = m['@type'] === 'Product' && m.offers.price > 0; } catch { productLdOk = false; }
+  return [
+    check('D8', 'D · Reasoner & v5 law', 'Product view — every product earns a detail page: price, breadcrumb, specs, related, Product JSON-LD',
+      productHtml.includes('breadcrumbs') && productHtml.includes(money(catalog[0].price)) && productLdOk && productHtml.includes('Related from the catalog'),
+      `“${catalog[0].name}” page: ${Math.round(productHtml.length / 1024)}KB, Product schema parses, price ${money(catalog[0].price)} on the page`),
+    check('D9', 'D · Reasoner & v5 law', 'Journal posts — Article JSON-LD, prose, dated entries',
+      postHtml.includes('Article') && postHtml.includes('March 2026') && postHtml.includes('journal.html') && postHtml.includes('prose'),
+      `post page renders with date ${journalEntry.date} + Article schema + back link`),
+    check('D10', 'D · Reasoner & v5 law', 'Search works — inline index covers the whole catalog, filters client-side',
+      searchHtml.includes('window.__SEARCH__') && searchHtml.includes(`"t":"${catalog[0].name}"`.replace(/"t"/g, '"t"')),
+      `index embeds ${catalog.length} products + ${pages.length} pages, zero server`),
+    check('D11', 'D · Reasoner & v5 law', 'Admin panel — real CRUD markers (add/edit/delete/export) + honest local-demo label',
+      ['addProduct', 'deleteProduct', 'exportValues', 'beast-admin-products'].every((m) => adminHtml.includes(m)) && adminHtml.includes('local demo'),
+      'admin.html carries addProduct/deleteProduct/exportValues + localStorage key + local-demo label'),
+    check('D12', 'D · Reasoner & v5 law', 'Auth pages exist and are honest — local demo labels, guest-first (Baymard law)',
+      loginHtml.includes('local demo') && signupHtml.includes('localStorage') && loginHtml.includes('No account?'),
+      'login/signup/account: nothing gated, everything labelled'),
+    check('D13', 'D · Reasoner & v5 law', 'Contacts directory — a different view from the contact page: desk table, reply times',
+      dirHtml.includes('dirTable') && dirHtml.includes('Reply time') && dirHtml.includes(`tel:${(values.phones[0].number).replace(/[^+\d]/g, '')}`),
+      `${values.phones.length} desks listed with direct numbers + reply-time column`),
+    check('D14', 'D · Reasoner & v5 law', 'Every file has a view — sitemap.html lists pages, products, images and every data file',
+      sitemapHtml.includes('values.json') && sitemapHtml.includes('ATTRIBUTION.txt') && sitemapHtml.includes(productFileFor(0, catalog[0].name)) && sitemapHtml.includes('assets/hero.jpg'),
+      'pages + products + images + data/documents all linked from sitemap.html'),
+    check('D15', 'D · Reasoner & v5 law', 'Offline page self-contained; manifest.json parses (installable)',
+      !offline.includes('https://') && !offline.includes('fonts.googleapis') && manifestOk,
+      'offline.html references zero external resources; manifest carries name + icons'),
+  ];
+}
+
+function testImageLaw(): TestResult[] {
+  const values = defaultValues('imglaw-seed', 'Img Brand', 'ceramics workshop', 'Kirkwall', 'the canal workshops', 'Courses', 65, ['Wheel courses', 'Hand-building', 'Open studio hours', 'Member shelves', 'School visits', 'Commissions'], seedFrom('imglaw-values'));
+  const pages = planPagesFor({ seed: 'imglaw-seed', brand: 'Img Brand', art: { values } } as never);
+  const rec: ImageRecord = { slotId: 'hero', role: 'hero', query: 'ceramics pottery', status: 'live', file: 'assets/hero.jpg', source: 'openverse', license: 'cc0', creator: 'A Maker', sourcePage: 'https://example.org/x' };
+  const withImg: RenderArt = { values, pages, images: [rec] };
+  const html = renderSite('imglaw-seed', 'T Owner', { art: withImg }).html;
+  const withoutImg = renderSite('imglaw-seed', 'T Owner', { art: { values, pages } }).html;
+  const imgOk = /<img class="ph" src="assets\/hero\.jpg" alt="[^"]+"/.test(html) && html.includes('decoding="async"');
+  const fallbackOk = !withoutImg.includes('assets/hero.jpg');
+  const ogOk = html.includes('og:image') && html.includes('assets/og.jpg');
+  return [
+    check('D16', 'D · Reasoner & v5 law', 'Real art — resolved slots become <img> with alt + lazy decoding; unresolved slots fall back to generated art (never broken)',
+      imgOk && fallbackOk, imgOk ? 'hero renders as a real <img> with alt text; no record → no broken img' : 'image law broken'),
+    check('D17', 'D · Reasoner & v5 law', 'Share cards tell the truth — og:image ships as a real file reference',
+      ogOk, 'og:image + twitter:image point at assets/og.jpg'),
+  ];
+}
+
+function testLedgerSize(): TestResult[] {
+  const values = { products: Array.from({ length: 30 }, (_, i) => ({ name: `P${i}`, desc: 'd', price: 10 })) } as never;
+  const pages = planPagesFor({ seed: 'ledger-seed', brand: 'Ledger Brand', art: { values } } as never);
+  const tasks = expandAfterPlan({ seed: 'ledger-seed', brand: 'Ledger Brand', id: 'x', art: { values, pages, findings: scanComplaints('ledger-seed', 'coffee', 'coffee roastery').findings } } as never);
+  const perPageQa = (tasks.filter((t) => t.kind === 'qa.a11y').length >= pages.length) &&
+    (tasks.filter((t) => t.kind === 'qa.device').length >= pages.length) &&
+    (tasks.filter((t) => t.kind === 'qa.html').length >= pages.length);
+  const first = planInitialTasks('ledger-seed')[0];
+  const hasExpand = tasks.filter((t) => t.kind === 'art.expand').length >= 16;
+  return [
+    check('D18', 'D · Reasoner & v5 law', 'The ledger is deep — 350+ real tasks per site (30-product catalog, 16 pages)',
+      tasks.length >= 350, `${tasks.length} tasks in the expansion alone (+${planInitialTasks('ledger-seed').length} reasoner/plan tasks)`),
+    check('D19', 'D · Reasoner & v5 law', 'QA batteries — a11y, device and HTML audits per page; art expansion rounds queued for the 30MB floor',
+      perPageQa && hasExpand && tasks.some((t) => t.kind === 'qa.size'),
+      `${tasks.filter((t) => t.kind.startsWith('qa.'))?.length ?? 0} QA tasks; 16 art-expansion fetches; size law present`),
+    check('D20', 'D · Reasoner & v5 law', 'The reasoner opens the ledger — review.scan is the FIRST task of every site',
+      first.kind === 'review.scan', `first task: “${first.title}”`),
+  ];
+}
+
 /* ============ runner ============ */
 
 export async function runSelfTest(): Promise<{ results: TestResult[]; passCount: number; failCount: number; durationMs: number }> {
@@ -589,6 +769,12 @@ export async function runSelfTest(): Promise<{ results: TestResult[]; passCount:
     ...testNicheGrammar(),
     ...testPageMapLaw(),
     ...testTaskGraphLaw(),
+    ...testReasonerCorpus(),
+    ...testDemandsInject(),
+    ...testLayoutVariety(),
+    ...testV5Pages(),
+    ...testImageLaw(),
+    ...testLedgerSize(),
     ...(await testEngine()),
   ];
   const passCount = results.filter((r) => r.pass).length;

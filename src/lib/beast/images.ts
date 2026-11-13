@@ -16,10 +16,10 @@ export type ImageRecord = {
     sourcePage?: string;     // foreign_landing_url — the human-checkable origin
 };
 
-export type ImageSlot = { slotId: string; role: 'hero' | 'gallery' | 'product'; query: string };
+export type ImageSlot = { slotId: string; role: 'hero' | 'gallery' | 'product' | 'service' | 'about' | 'journal' | 'og'; query: string };
 
 const TIMEOUT = 9_000;
-const UA = 'BeastWebDeveloper/4.0 (autonomous design studio; image fetcher)';
+const UA = 'BeastWebDeveloper/5.0 (autonomous design studio; image fetcher)';
 
 async function timedFetch(url: string, init?: RequestInit): Promise<Response | null> {
   try {

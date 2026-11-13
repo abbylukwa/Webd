@@ -7,6 +7,7 @@ import {
 import { githubConfigured } from '@/lib/beast/storage';
 import { aiEnabled } from '@/lib/beast/ai';
 import { LAYOUTS } from '@/lib/beast/layouts';
+import { layoutVariety } from '@/lib/beast/reasoner';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -58,6 +59,16 @@ function publicState(state: ReturnType<typeof loadState>) {
           socials: s.art.values.socials.length,
         } : null,
         images: (s.art.images ?? []).map((r) => ({ slotId: r.slotId, status: r.status, source: r.source, license: r.license ?? null })),
+        // v5 reasoner + size + layout variety (Mission Control)
+        reasoning: {
+          findings: s.art.findings?.length ?? 0,
+          demands: s.art.demands?.length ?? 0,
+          personas: s.art.personas?.length ?? 0,
+          pagesArranged: Object.keys(s.art.pageLayouts ?? {}).length,
+          layouts: layoutVariety(s.art.pageLayouts),
+          topPains: (s.art.findings ?? []).slice(0, 4).map((f) => f.complaintId),
+        },
+        size: s.art.sizeReport ?? null,
         progress: total > 0 ? Math.round((accepted / total) * 100) : 0,
         taskCounts: {
           total,

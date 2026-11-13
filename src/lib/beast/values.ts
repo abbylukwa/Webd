@@ -4,7 +4,23 @@
 
 export const MAX_PHONES = 12;
 export const MAX_PRODUCTS = 30;
-export const MAX_PAGES = 9;
+// v5: 9 content pages (home/about/services/products?/gallery/faq/contact/journal?/legal)
+// + 7 functional pages (contacts directory, search, login, signup, account, admin, thank-you)
+export const MAX_PAGES = 16;
+
+/* ---------- deterministic file names (shared by tasks + render) ---------- */
+
+export function slugify(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 28).replace(/-+$/g, '') || 'item';
+}
+
+export function productFileFor(index: number, name: string): string {
+  return `product-${index + 1}-${slugify(name)}.html`;
+}
+
+export function journalFileFor(index: number, title: string): string {
+  return `journal-${index + 1}-${slugify(title)}.html`;
+}
 
 export type SocialPlatform =
   | 'instagram' | 'facebook' | 'x' | 'tiktok' | 'linkedin' | 'youtube' | 'pinterest' | 'whatsapp';
@@ -36,6 +52,8 @@ export type SiteValues = {
   products: Product[];        // ≤ MAX_PRODUCTS
   domain: string;             // one placeholder the buyer swaps
 };
+
+export type AdminOverride = { products?: Product[]; note?: string; at?: string };
 
 export function socialUrl(platform: SocialPlatform, handle: string): string {
   const found = SOCIAL_PLATFORMS.find((s) => s.key === platform);
@@ -121,6 +139,13 @@ export function defaultValues(
     products,
     domain: `${slug}.site`,
   };
+}
+
+/* ---------- merge admin overrides (the admin panel's localStorage edits) ---------- */
+export function mergeAdminOverride(v: SiteValues, ov: AdminOverride | null | undefined): SiteValues {
+  if (!ov || !ov.products || ov.products.length === 0) return v;
+  const merged = { ...v, products: ov.products.slice(0, MAX_PRODUCTS) };
+  return merged;
 }
 
 /* ---------- validation (caps are law) ---------- */

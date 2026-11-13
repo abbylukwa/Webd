@@ -36,6 +36,8 @@ type Site = {
   git: { repo: string; url: string; pushedAt: string } | null;
   valuesSummary: { phones: number; products: number; socials: number } | null;
   images: { slotId: string; status: string; source: string; license: string | null }[];
+  reasoning: { findings: number; demands: number; personas: number; pagesArranged: number; layouts: { perDevice: Record<string, number>; distinct: number }; topPains: string[] } | null;
+  size: { bytes: number; files: number; mb: number; at: string; rounds: number } | null;
   progress: number;
   taskCounts: { total: number; accepted: number; queued: number; deferred: number };
 };
@@ -242,6 +244,19 @@ export default function ControlPage() {
                         <Badge variant="secondary" className="bg-zinc-800 text-zinc-300">{s.valuesSummary.phones} phones · {s.valuesSummary.products} products · {s.valuesSummary.socials} socials</Badge>
                       )}
                     </div>
+                    {s.reasoning && s.reasoning.findings > 0 && (
+                      <div className="flex flex-wrap gap-1 text-[11px]">
+                        <Badge variant="outline" className="border-fuchsia-800 text-fuchsia-300">Reasoner: {s.reasoning.findings} pains researched → {s.reasoning.demands} demands</Badge>
+                        <Badge variant="outline" className="border-fuchsia-800 text-fuchsia-300">{s.reasoning.pagesArranged} pages × 5 devices arranged</Badge>
+                        <Badge variant="outline" className="border-fuchsia-800 text-fuchsia-300">{s.reasoning.layouts.distinct} distinct layouts used</Badge>
+                        {s.reasoning.topPains.length > 0 && (
+                          <Badge variant="outline" className="border-zinc-700 text-zinc-400">top pains: {s.reasoning.topPains.join(', ')}</Badge>
+                        )}
+                      </div>
+                    )}
+                    {s.size && (
+                      <div className="text-[11px] text-zinc-500">Site size: <b className={s.size.mb >= 30 ? 'text-emerald-400' : 'text-zinc-300'}>{s.size.mb}MB</b> across {s.size.files} files ({s.size.rounds} art-expansion rounds{s.size.mb >= 30 ? ' — 30MB floor cleared' : ''})</div>
+                    )}
                     <div className="flex flex-wrap gap-1 text-[11px] text-zinc-500">
                       {s.images.slice(0, 8).map((im) => (
                         <span key={im.slotId} className={`px-1.5 py-0.5 rounded border ${im.status === 'live' ? 'border-emerald-800 text-emerald-400' : im.status === 'picsum' ? 'border-sky-800 text-sky-400' : 'border-zinc-700'}`}>{im.slotId}: {im.status}</span>
@@ -532,7 +547,7 @@ export default function ControlPage() {
         </Tabs>
       </main>
       <footer className="border-t border-zinc-800 py-4 text-center text-[11px] text-zinc-600">
-        Beast Web Developer v{state.version} — Mission Control · everything visible, everything controllable.
+        Beast Web Developer v{state.version} — Mission Control · the reasoner researches, the ledger builds, everything visible.
       </footer>
     </div>
   );
