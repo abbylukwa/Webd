@@ -354,18 +354,30 @@ export async function drainExclusive(
 const HTML_MARKER = 'Beast Web Developer';
 
 export function getSiteHtml(id: string, page = 'index.html'): string | null {
+  const file = getSiteFile(id, page);
+  return file ? file.toString('utf8') : null;
+}
+
+/**
+ * Every file gets a view — pages, product pages, journal posts, assets, data
+ * files. Path-traversal safe: the resolved path must stay inside the site dir.
+ * Triggers the same self-heal as getSiteHtml when an HTML page is expected.
+ */
+export function getSiteFile(id: string, rel: string): Buffer | null {
   const state = loadState();
   const site = state.sites.find((s) => s.id === id);
   if (!site) return null;
   const dir = siteDir(id);
-  const p = path.join(dir, page);
+  const p = path.resolve(dir, rel);
+  if (!p.startsWith(path.resolve(dir) + path.sep) && p !== path.resolve(dir)) return null;
   const built = site.tasks.some((t) => t.kind === 'page.build' && t.status === 'accepted') || site.status === 'for-sale';
-  if (built && !fs.existsSync(p)) {
+  if (built && !fs.existsSync(p) && rel.endsWith('.html')) {
     // self-heal: rebuild every page from the frozen artifacts (deterministic —
     // no awaits inside, the whole rebuild runs synchronously)
     void rebuildAllPages(taskCtx(state), site);
   }
-  return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null;
+  if (!fs.existsSync(p) || !fs.statSync(p).isFile()) return null;
+  return fs.readFileSync(p);
 }
 
 export async function zipSite(state: BeastState, id: string): Promise<Buffer | null> {
