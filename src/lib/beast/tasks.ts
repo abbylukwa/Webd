@@ -1333,7 +1333,14 @@ function countDiff(a: number, b: number): number {
   return Math.abs(a - b);
 }
 
+// one flight per site — concurrent misses reuse the in-flight render instead
+// of stacking whole-site renders (each blocks the loop and allocates megabytes)
+const rebuilding = new Set<string>();
+
 export async function rebuildAllPages(ctx: TaskCtx, site: V3Site): Promise<void> {
+  if (rebuilding.has(site.id)) return;
+  rebuilding.add(site.id);
+  try {
   const dir = ctx.siteDir(site.id);
   fs.mkdirSync(dir, { recursive: true });
   const pages = site.art.pages ?? [];
@@ -1355,6 +1362,9 @@ export async function rebuildAllPages(ctx: TaskCtx, site: V3Site): Promise<void>
   fs.writeFileSync(path.join(dir, 'offline.html'), renderOfflineHtml(site.seed));
   const support = renderSupportFiles(site.seed, ctx.owner, { price: site.price, copyright: site.copyright, pages: allSiteFiles(site).map((f) => f.file) });
   for (const [name, content] of Object.entries(support)) fs.writeFileSync(path.join(dir, name), content);
+  } finally {
+    rebuilding.delete(site.id);
+  }
 }
 
 export function listSiteFiles(dir: string): { rel: string; text?: string; bytes?: Buffer; binary?: boolean }[] {

@@ -20,6 +20,7 @@ import {
   planInitialTasks, runNextTask, executeIoTask, listSiteFiles, rebuildAllPages, IO_KINDS,
   type Task, type TaskStatus, type SiteArt, type TaskCtx,
 } from './tasks';
+import { rehydrateImage } from './images';
 import { validateValues } from './values';
 import { pushStudioState, loadStudioState, githubConfigured, VAULT_REPO } from './storage';
 import { layoutVariety } from './reasoner';
@@ -87,37 +88,71 @@ function siteDir(id: string): string {
   return path.join(SITES_DIR(), id);
 }
 
-export function loadState(): BeastState {
-  ensureDirs();
-  if (fs.existsSync(STATE_FILE())) {
-    try {
-      const parsed = JSON.parse(fs.readFileSync(STATE_FILE(), 'utf8')) as BeastState;
-      if (parsed.version === ENGINE_VERSION) return parsed;
-      // older state (v3 day-theater or earlier) → fresh start per owner directive
-    } catch { /* corrupt → rebuild */ }
-  }
+// parsed-state cache — every request used to re-parse the whole state file
+// (multi-MB JSON); keyed by path+mtime+size so saveState, external writes
+// (same-millisecond fixture writes included) and sandbox switches all
+// invalidate it. Single process (WEB_CONCURRENCY=1) makes this safe.
+let stateCache: { file: string; mtimeMs: number; size: number; state: BeastState } | null = null;
+
+function freshBootState(): BeastState {
   const state: BeastState = {
     version: ENGINE_VERSION, cycle: 1, startedAt: nowIso(), owner: OWNER_DEFAULT,
     sites: [], log: [], transcript: [],
   };
   logEvent(state, { message: 'v5 truthful reasoner engine — it researches what people hate first, then every site is built task by real task, logged as it happens.', level: 'info' });
-  saveState(state);
   return state;
+}
+
+export function loadState(): BeastState {
+  ensureDirs();
+  const file = STATE_FILE();
+  if (fs.existsSync(file)) {
+    let foreign = false;
+    try {
+      const st = fs.statSync(file);
+      if (stateCache && stateCache.file === file && stateCache.mtimeMs === st.mtimeMs && stateCache.size === st.size) return stateCache.state;
+      const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as BeastState;
+      if (parsed.version === ENGINE_VERSION) {
+        stateCache = { file, mtimeMs: st.mtimeMs, size: st.size, state: parsed };
+        return parsed;
+      }
+      foreign = true; // pre-v5 state (v3 day-theater or earlier) → fresh start per owner directive
+    } catch { foreign = true; /* corrupt → rebuild */ }
+    if (foreign) {
+      // the purge is deliberate: overwrite the foreign file immediately. The
+      // pristine-push guard in saveState keeps this OFF the vault.
+      const state = freshBootState();
+      saveState(state);
+      return state;
+    }
+  }
+  // cold boot (no state file at all): deliberately NOT saved. adoptVaultState
+  // must get a chance to read the vault BEFORE anything pushes — saving here
+  // fires an empty state at the vault and can overwrite the real snapshot
+  // before it is read (this exact race erased two finished batches).
+  return freshBootState();
 }
 
 let vaultPushBusy = false;
 let lastPushedState = '';
+let lastPushStartedAt = 0;
 
 export function saveState(state: BeastState) {
   ensureDirs();
+  const file = STATE_FILE();
   const json = JSON.stringify(state, null, 1);
-  fs.writeFileSync(STATE_FILE(), json);
+  fs.writeFileSync(file, json);
+  try { const st = fs.statSync(file); stateCache = { file, mtimeMs: st.mtimeMs, size: st.size, state }; } catch { /* keep old cache */ }
   // Durable memory: the vault gets every state change (one small commit).
   // Fire-and-forget — the studio never waits on the network, and a missing
-  // token costs nothing (deferred without an API call).
-  if (githubConfigured() && !vaultPushBusy && json !== lastPushedState) {
+  // token costs nothing (deferred without an API call). Guardrails: a pristine
+  // boot state is never pushed (it would overwrite the vault before adoption
+  // reads it), pushes are time-throttled, identical states are skipped.
+  const pristine = state.sites.length === 0 && state.log.length <= 1;
+  if (githubConfigured() && !vaultPushBusy && !pristine && json !== lastPushedState && Date.now() - lastPushStartedAt >= 30_000) {
     vaultPushBusy = true;
     lastPushedState = json;
+    lastPushStartedAt = Date.now();
     void pushStudioState(json)
       .catch(() => { /* vault unreachable — local file remains the truth */ })
       .finally(() => { vaultPushBusy = false; });
@@ -376,7 +411,13 @@ export function getSiteFile(id: string, rel: string): Buffer | null {
     // no awaits inside, the whole rebuild runs synchronously)
     void rebuildAllPages(taskCtx(state), site);
   }
-  if (!fs.existsSync(p) || !fs.statSync(p).isFile()) return null;
+  if (!fs.existsSync(p) || !fs.statSync(p).isFile()) {
+    // self-heal for imagery: after a restart the disk is empty but the vaulted
+    // records carry remoteUrl — re-download (single-flight, ≤2 concurrent).
+    const rec = (site.art.images ?? []).find((r) => r.file === rel && r.remoteUrl && r.status !== 'gradient');
+    if (built && rec) void rehydrateImage(dir, rec);
+    return null;
+  }
   return fs.readFileSync(p);
 }
 
@@ -403,7 +444,25 @@ export async function zipSite(state: BeastState, id: string): Promise<Buffer | n
   return zip.generateAsync({ type: 'nodebuffer' });
 }
 
-export async function zipAll(state: BeastState): Promise<Buffer> {
+function dirBytes(dir: string): number {
+  let total = 0;
+  try {
+    if (!fs.existsSync(dir)) return 0;
+    for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, f.name);
+      if (f.isDirectory()) total += dirBytes(full);
+      else if (f.isFile()) total += fs.statSync(full).size;
+    }
+  } catch { /* unreadable — count as 0 */ }
+  return total;
+}
+
+export async function zipAll(state: BeastState): Promise<Buffer | null> {
+  // honest memory guard: one archive of every site loads every file into
+  // memory at once — on a 512MB instance that IS the OOM Render reported.
+  // Heavy worlds are refused with 413; per-site ZIPs stay available.
+  const total = state.sites.reduce((n, s) => n + dirBytes(siteDir(s.id)), 0);
+  if (total > 120 * 1024 * 1024) return null;
   const zip = new JSZip();
   for (const site of state.sites) {
     const folder = zip.folder(site.id)!;

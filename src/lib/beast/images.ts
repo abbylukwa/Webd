@@ -91,6 +91,38 @@ export async function fetchImageBytes(url: string): Promise<Buffer | null> {
   }
 }
 
+/* ---------- restart rehydration ---------- */
+// The vault restores STATE across restarts, but the ephemeral disk comes back
+// empty — image files 404 until re-fetched. Records carry remoteUrl, so any
+// missing asset can be re-downloaded exactly (picsum URLs are seeded; CC
+// source URLs are stable). Single-flight per file, ≤2 concurrent — never a
+// fetch storm (a storm on an empty instance is how Render saw an OOM).
+
+import fs from 'fs';
+import path from 'path';
+
+const rehydrating = new Set<string>();
+let rehydrateActive = 0;
+
+export async function rehydrateImage(dir: string, rec: ImageRecord): Promise<boolean> {
+  if (!rec.file || !rec.remoteUrl || rec.status === 'gradient') return false;
+  if (rehydrating.has(rec.file) || rehydrateActive >= 2) return false;
+  rehydrating.add(rec.file);
+  rehydrateActive++;
+  try {
+    const bytes = await fetchImageBytes(rec.remoteUrl);
+    if (!bytes || bytes.length < 1000) return false; // error pages are small
+    fs.mkdirSync(path.join(dir, 'assets'), { recursive: true });
+    fs.writeFileSync(path.join(dir, rec.file), bytes);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    rehydrateActive--;
+    rehydrating.delete(rec.file);
+  }
+}
+
 /** Pick search keywords per niche so images actually fit the business. */
 export function nicheImageQueries(nicheLabel: string, nicheKey: string): string[] {
   const KEY: Record<string, string[]> = {
