@@ -165,14 +165,17 @@ export async function pushStudioState(stateJson: string): Promise<PublishResult>
   return { ok: true, repo: repo.fullName, url: `https://github.com/${repo.fullName}` };
 }
 
-/** Fetch the vaulted studio state, or null when absent/unreachable. */
+/** Fetch the vaulted studio state. '' = vault confirmed absent/empty (safe to
+ *  start fresh); null = read FAILED (rate limit, network) — callers must treat
+ *  that as UNVERIFIED and never overwrite the vault. */
 export async function loadStudioState(): Promise<string | null> {
   if (!githubConfigured()) return null;
-  const owner = await ghOwner();
-  if (!owner) return null;
-  const { status, data } = await gh<{ content?: string; encoding?: string }>(`/repos/${owner}/${VAULT_REPO}/contents/beast-state.json`);
-  if (status !== 200 || !data?.content) return null;
   try {
+    const owner = await ghOwner();
+    if (!owner) return null;
+    const { status, data } = await gh<{ content?: string; encoding?: string }>(`/repos/${owner}/${VAULT_REPO}/contents/beast-state.json`);
+    if (status === 404) return ''; // confirmed: no vault yet — nothing to lose
+    if (status !== 200 || !data?.content) return null; // rate limit / server error — UNVERIFIED
     return Buffer.from(data.content, 'base64').toString('utf8');
   } catch {
     return null;

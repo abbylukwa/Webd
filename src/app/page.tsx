@@ -17,7 +17,7 @@ import { LIBRARY } from '@/lib/beast/knowledge';
 import {
   Download, Trash2, Eye, Play, Plus, Package, Github, Keyboard, Ruler, Palette as PaletteIcon,
   Layers, Infinity as InfinityIcon, BookOpen, ShieldCheck, MonitorSmartphone, FlaskConical, Gauge,
-  Sparkles, Braces, CheckCircle2, Clock, Activity, ChevronDown, ExternalLink,
+  Sparkles, Braces, CheckCircle2, Clock, Activity, ChevronDown, ExternalLink, History,
 } from 'lucide-react';
 
 /** repo html_url → its GitHub Pages site url (where the site is actually published) */
@@ -55,7 +55,7 @@ type Turn = { id: string; taskId: string; taskTitle: string; provider: string; m
 type Status = {
   version: number; cycle: number; startedAt: string; working: boolean;
   owner: string; concurrency: number; stages: Stage[]; devices: Device[];
-  github: { configured: boolean }; ai: { enabled: boolean; pool?: { keys: number; ready: number; cooling: number; lastError: string | null } };
+  github: { configured: boolean }; ai: { enabled: boolean; pool?: { keys: number; ready: number; unusable: number; cooling: number; lastError: string | null } };
   workspace?: { bytes: number; budget: number; sites: number; maxSites: number };
   sites: Site[]; log: LogEvent[]; transcript: Turn[];
 };
@@ -345,13 +345,15 @@ export default function BeastPage() {
             <Button size="sm" className="bg-lime-300 font-bold text-zinc-950 hover:bg-lime-200" disabled={!shelf.length} onClick={() => { window.location.href = '/api/beast/zip-all'; toast({ title: 'Workspace packed — download started' }); }}>
               <Package className="h-4 w-4" /> <span className="hidden md:inline">Download all</span>
             </Button>
+            <Button size="sm" variant="ghost" className="text-zinc-400 hover:bg-zinc-800" disabled={!status?.github.configured} onClick={() => act({ action: 'restore-vault' }, 'Vault restore — the last vaulted workspace is back on the floor')}>
+              <History className="h-4 w-4" /> <span className="hidden md:inline">Restore</span>
+            </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button size="sm" variant="ghost" className="text-zinc-400 hover:bg-red-950 hover:text-red-300" disabled={!status?.sites.length}>
                   <Trash2 className="h-4 w-4" /> <span className="hidden md:inline">Clear</span>
                 </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent className="border-zinc-800 bg-zinc-900 text-zinc-100">
+              </AlertDialogTrigger>              <AlertDialogContent className="border-zinc-800 bg-zinc-900 text-zinc-100">
                 <AlertDialogHeader>
                   <AlertDialogTitle>Clear the workspace?</AlertDialogTitle>
                   <AlertDialogDescription className="text-zinc-400">
@@ -553,12 +555,12 @@ export default function BeastPage() {
                   <Sparkles className="h-5 w-5 text-lime-300" /> AI answers — raw response, meaning, next action
                   <Badge variant="outline" className={status?.ai.enabled ? 'border-lime-300/40 font-mono text-lime-300' : 'border-zinc-700 font-mono text-zinc-400'}>
                     {status?.ai.enabled
-                      ? `AI enabled · pool ${status.ai.pool ? `${status.ai.pool.ready} ready${status.ai.pool.cooling ? `, ${status.ai.pool.cooling} cooling` : ''}` : ''}`
+                      ? `AI enabled · pool ${status.ai.pool ? `${status.ai.pool.ready} ready${status.ai.pool.unusable ? `, ${status.ai.pool.unusable} unusable` : ''}${status.ai.pool.cooling ? `, ${status.ai.pool.cooling} cooling` : ''}` : ''}`
                       : 'solver floor — no keys configured'}
                   </Badge>
                   {status?.ai.pool?.lastError && (
                     <Badge variant="outline" className="border-amber-300/40 font-mono text-[10px] text-amber-300/90" title={status.ai.pool.lastError}>
-                      last pool error: {status.ai.pool.lastError.slice(0, 40)}
+                      pool: {status.ai.pool.lastError.slice(0, 60)}
                     </Badge>
                   )}
                 </CardTitle>

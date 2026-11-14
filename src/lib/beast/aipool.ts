@@ -62,21 +62,22 @@ const healthLog = new Map<string, { status: string; at: number }>();
 // honest diagnostics: the UI shows why the pool is (or isn't) answering
 let lastPoolError: { provider: string; reason: string; at: number } | null = null;
 
-export function poolStatus(vault: VaultKey[]): { keys: number; ready: number; cooling: number; lastError: string | null } {
+export function poolStatus(vault: VaultKey[]): { keys: number; ready: number; unusable: number; cooling: number; lastError: string | null } {
   const now = Date.now();
   let ready = 0;
+  let unusable = 0;
   let cooling = 0;
-  const seen = new Set<string>();
   for (const k of vault) {
     const p = detectProvider(k.key);
-    if (seen.has(p)) continue;
-    seen.add(p);
+    const hasBase = providerBase(p) !== null || !!k.base?.trim();
+    if (!hasBase) { unusable += 1; continue; }
     if ((cooldowns.get(p) ?? 0) > now) cooling += 1;
     else ready += 1;
   }
   return {
     keys: vault.length,
     ready,
+    unusable,
     cooling,
     lastError: lastPoolError ? `${lastPoolError.provider}: ${lastPoolError.reason}` : null,
   };
@@ -151,6 +152,11 @@ export async function callAiPool(
     const p = detectProvider(k.key);
     return (cooldowns.get(p) ?? 0) <= now && (providerBase(p) !== null || !!k.base);
   });
+  if (usable.length === 0 && vault.length > 0) {
+    // say WHY the pool is silent instead of failing invisibly
+    lastPoolError = { provider: 'pool', reason: `${vault.length} key(s) present but none usable — unrecognized provider shape or missing base URL`, at: Date.now() };
+    return null;
+  }
   for (const k of usable) {
     const provider = detectProvider(k.key);
     const base = k.base?.trim() || providerBase(provider);

@@ -153,7 +153,7 @@ export function saveState(state: BeastState) {
   // boot state is never pushed (it would overwrite the vault before adoption
   // reads it), pushes are time-throttled, identical states are skipped.
   const pristine = state.sites.length === 0 && state.log.length <= 1;
-  if (githubConfigured() && !vaultPushBusy && !pristine && json !== lastPushedState && Date.now() - lastPushStartedAt >= 30_000) {
+  if (githubConfigured() && vaultVerified() && !vaultPushBusy && !pristine && json !== lastPushedState && Date.now() - lastPushStartedAt >= 30_000) {
     vaultPushBusy = true;
     lastPushedState = json;
     lastPushStartedAt = Date.now();
@@ -169,13 +169,41 @@ export function saveState(state: BeastState) {
  * survive deploys and restarts. Site files are rebuilt on demand from the
  * frozen artifacts (self-heal in getSiteHtml).
  */
+// Vault trust: the vault may only ever be WRITTEN after it has been READ.
+// If the read fails (GitHub rate limit, network), a fresh batch must not be
+// commissioned and nothing may be pushed — otherwise the fresh state would
+// overwrite a snapshot that was never seen. This exact sequence erased the
+// Ground & Velvet batch on 2026-11-14 (adoption 403'd → fresh commission).
+let vaultReadOk = false;
+let lastVaultWarnAt = 0;
+
+/** The raw flag: did the LAST vault read succeed (adopted or confirmed empty)? */
+export function vaultReadConfirmed(): boolean {
+  return vaultReadOk;
+}
+
+/** Owner-facing: is the vault trustworthy for pushes/commissions right now? */
+export function vaultVerified(): boolean {
+  return vaultReadOk || !githubConfigured();
+}
+
 export async function adoptVaultState(
   state: BeastState,
   loader: () => Promise<string | null> = loadStudioState
 ): Promise<boolean> {
-  if (state.sites.length > 0 || state.log.length > 1) return false; // local state exists — it wins
+  if (state.sites.length > 0) return false; // local work exists — it wins. (Log lines alone are
+  // never "work": after a failed adoption the warn log must not block the retry.)
   try {
     const raw = await loader();
+    if (raw === null) {
+      vaultReadOk = false; // UNVERIFIED — never push or commission over a vault we couldn't read
+      if (Date.now() - lastVaultWarnAt > 60_000) {
+        lastVaultWarnAt = Date.now();
+        logEvent(state, { message: 'Vault unreadable (rate limit or network) — the studio waits rather than overwrite it; adoption retries on the next request.', level: 'warn' });
+      }
+      return false;
+    }
+    vaultReadOk = true; // read succeeded: '' (confirmed empty) or real state
     if (!raw) return false;
     const vaulted = JSON.parse(raw) as BeastState;
     if (vaulted?.version !== ENGINE_VERSION || !Array.isArray(vaulted.sites)) return false;
@@ -263,6 +291,7 @@ export function commission(state: BeastState): BeastSite {
  *  CONCURRENCY sites in total — shelf (for-sale) sites occupy slots too, so
  *  the studio rotates: sell and clear to make room for fresh commissions. */
 export function topUp(state: BeastState): number {
+  if (!vaultVerified()) return 0; // never commission over an unreadable vault
   let added = 0;
   while (state.sites.length < CONCURRENCY && state.sites.filter((s) => s.status === 'in-studio').length < CONCURRENCY) {
     commission(state);

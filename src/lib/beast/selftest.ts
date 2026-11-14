@@ -633,6 +633,19 @@ async function testEngine(): Promise<TestResult[]> {
     results.push(check('C18', 'C · Engine (sandboxed)', 'Reasoner chain — every commissioned site carries sourced findings → demands → personas',
       findings.length >= 20 && (probeArt.demands?.length ?? 0) >= 10 && (probeArt.personas?.length ?? 0) >= 1 && findings.every((f) => !!f.source),
       `${findings.length} findings (all sourced) → ${probeArt.demands?.length ?? 0} demands → ${probeArt.personas?.length ?? 0} personas`));
+
+    // -- vault trust: an unreadable vault must never be overwritten -----------------
+    fs.rmSync(path.join(sandbox, 'beast-state.json'), { force: true });
+    const fresh3 = engine.loadState();
+    fresh3.log = [];
+    const failedAdopt = await engine.adoptVaultState(fresh3, async () => null);
+    const unverifiedAfterFail = !engine.vaultReadConfirmed();
+    fresh3.log = []; // the throttled warn from the failed attempt must not block the retry
+    const emptyAdopt = await engine.adoptVaultState(fresh3, async () => '');
+    const verifiedAfterEmpty = engine.vaultReadConfirmed();
+    results.push(check('C19', 'C · Engine (sandboxed)', 'Vault trust — an unreadable vault blocks commission+push; a confirmed-empty one starts fresh',
+      failedAdopt === false && unverifiedAfterFail && emptyAdopt === false && verifiedAfterEmpty,
+      `adopt(null)=${failedAdopt} · unconfirmed-after-null=${unverifiedAfterFail} · adopt('')=${emptyAdopt} · confirmed-after-empty=${verifiedAfterEmpty}`));
   } finally {
     if (prevDir === undefined) delete process.env.BEAST_DATA_DIR;
     else process.env.BEAST_DATA_DIR = prevDir;

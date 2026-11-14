@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   loadState, bootStudio, commission, saveState, drainExclusive, isWorking, clearWorkspace, setOwner,
   runTaskNow, setValues, pushToGithub, adoptVaultState, workspaceBytes, WORKSPACE_BUDGET_BYTES,
-  STAGES, DEVICE_CLASSES, CONCURRENCY, ENGINE_VERSION,
+  vaultVerified, logEvent, ENGINE_VERSION,
+  STAGES, DEVICE_CLASSES, CONCURRENCY,
 } from '@/lib/beast/engine';
-import { githubConfigured } from '@/lib/beast/storage';
+import { githubConfigured, loadStudioState } from '@/lib/beast/storage';
 import { aiEnabled, vaultKeys } from '@/lib/beast/ai';
 import { poolStatus } from '@/lib/beast/aipool';
 import { LAYOUTS } from '@/lib/beast/layouts';
@@ -25,6 +26,7 @@ function publicState(state: ReturnType<typeof loadState>) {
     devices: DEVICE_CLASSES,
     layoutCount: LAYOUTS.length,
     github: { configured: githubConfigured() },
+    vault: { verified: vaultVerified() },
     ai: { enabled: aiEnabled(), pool: poolStatus(vaultKeys()) },
     workspace: {
       bytes: workspaceBytes(state),
@@ -92,8 +94,8 @@ function publicState(state: ReturnType<typeof loadState>) {
 
 export async function GET() {
   const state = loadState();
-  await adoptVaultState(state); // cold boot? adopt the vaulted studio (durable memory)
-  bootStudio(state);            // empty floor? commission real sites right now
+  const adopted = await adoptVaultState(state); // cold boot? adopt the vaulted studio (durable memory)
+  if (adopted || vaultVerified()) bootStudio(state); // only commission when the vault was seen (or there is none)
   void drainExclusive(state, { maxTasks: 4, maxMs: 40_000 }).catch(() => {}); // start working immediately
   return NextResponse.json(publicState(state));
 }
@@ -130,6 +132,29 @@ export async function POST(req: NextRequest) {
       clearWorkspace(state);
       bootStudio(state);
       return NextResponse.json({ ok: true, cleared: true, ...publicState(state) });
+    }
+    case 'restore-vault': {
+      // owner action: pull the last vaulted workspace back onto the floor
+      const vaultRaw = await loadStudioState();
+      if (vaultRaw === null) {
+        return NextResponse.json({ ok: false, message: 'Vault unreadable right now (GitHub rate limit or network) — nothing was changed; try again in a minute.' });
+      }
+      let restored = 0;
+      if (vaultRaw) {
+        try {
+          const vaulted = JSON.parse(vaultRaw) as typeof state;
+          if (vaulted?.version === ENGINE_VERSION && (vaulted.sites?.length ?? 0) > 0) {
+            state.sites = vaulted.sites;
+            state.log = vaulted.log ?? [];
+            state.transcript = vaulted.transcript ?? [];
+            restored = state.sites.length;
+            logEvent(state, { message: `Vault restore — ${restored} site(s) pulled back onto the floor at their exact progress.`, level: 'info' });
+          }
+        } catch { /* malformed vault — fall through to honest empty result */ }
+      }
+      saveState(state);
+      bootStudio(state);
+      return NextResponse.json({ ok: true, restored, message: restored ? `${restored} site(s) restored from the vault` : 'The vault holds no restorable workspace — a fresh batch was commissioned.', ...publicState(state) });
     }
     case 'setOwner': {
       await setOwner(state, String(body.owner ?? ''));
