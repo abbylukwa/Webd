@@ -148,12 +148,17 @@ export async function pushStudioState(stateJson: string): Promise<PublishResult>
   if (!githubConfigured()) return { ok: false, deferred: true, reason: 'BEAST_GH_TOKEN not set — studio state stays local-only.' };
   const repo = await ensureRepo(VAULT_REPO, 'Beast Web Developer — studio state vault (auto-created).');
   if (!repo.ok || !repo.fullName) return { ok: false, reason: repo.reason };
-  // single-file commit via the Contents API (PUT = create or update)
+  // single-file commit via the Contents API. Updating an existing file REQUIRES
+  // its blob sha — without it every push after the first 422s (this is exactly
+  // what silently emptied the vault in v5.0–v5.4). Fetch sha when present.
+  const cur = await gh<{ sha?: string }>(`/repos/${repo.fullName}/contents/beast-state.json`);
+  const sha = cur.status === 200 && typeof cur.data?.sha === 'string' ? cur.data.sha : undefined;
   const { status, data } = await gh<{ content?: { sha?: string } }>(`/repos/${repo.fullName}/contents/beast-state.json`, {
     method: 'PUT',
     body: JSON.stringify({
       message: `state snapshot — truthful ledger update (${new Date().toISOString()})`,
       content: Buffer.from(stateJson, 'utf8').toString('base64'),
+      ...(sha ? { sha } : {}),
     }),
   });
   if (status !== 200 && status !== 201) return { ok: false, reason: `contents-${status}` };
