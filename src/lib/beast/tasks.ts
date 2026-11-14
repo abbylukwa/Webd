@@ -93,8 +93,14 @@ export type SiteArt = ReasoningArt & {
 export type TaskCtx = {
   owner: string;
   siteDir: (siteId: string) => string;
+  siteBytes?: (siteId: string) => number;   // live bytes on disk — the budget guard
   logTurn: (turn: AiTurn) => void;
 };
+
+// The owner's law (2026-11-14): the studio runs on a 512MB instance, so the
+// workspace budget is 4 sites × 100MB = 400MB. Each site's folder may grow to
+// 100MB on disk — the guard lives in the image tasks and in sizeCheck.
+export const SITE_BUDGET_BYTES = 100 * 1024 * 1024;
 
 let seq = 0;
 function tid(siteId: string): string {
@@ -635,6 +641,8 @@ function siteNicheKey(site: V3Site): string {
 }
 
 /* ---------- the executor ---------- */
+let lastAiFailTurnAt = 0;
+
 export async function runNextTask(ctx: TaskCtx, site: V3Site): Promise<string> {
   const task = site.tasks.find((t) => t.status === 'queued');
   if (!task) return `${site.brand}: no queued task (ledger complete)`;
@@ -648,8 +656,9 @@ export async function runNextTask(ctx: TaskCtx, site: V3Site): Promise<string> {
   let verdict: 'ACCEPT' | 'REFINE' | 'DEFER' = 'ACCEPT';
   let interpNote = '';
 
-  // AI path for text-bearing kinds when the vault has usable keys
-  const aiKinds: TaskKind[] = ['brief.compose', 'heading.compose', 'section.copy', 'product.copy', 'faq.entry', 'journal.entry'];
+  // AI path for text-bearing kinds when the vault has usable keys — the
+  // reasoner's own research (review.scan) thinks with the pool too
+  const aiKinds: TaskKind[] = ['brief.compose', 'heading.compose', 'section.copy', 'product.copy', 'faq.entry', 'journal.entry', 'review.scan'];
   if (aiEnabled() && aiKinds.includes(task.kind)) {
     const stateFacts = [
       `brand: ${site.brand} — ${site.nicheLabel} in ${site.city}`,
@@ -664,9 +673,10 @@ export async function runNextTask(ctx: TaskCtx, site: V3Site): Promise<string> {
       : task.kind === 'product.copy' ? 'JSON only: {"desc": "12-30 words with a fact", "alt": "what is shown"}'
       : task.kind === 'faq.entry' ? 'JSON only: {"q": "the question", "a": "answer <=3 sentences"}'
       : task.kind === 'journal.entry' ? 'JSON only: {"title": "<=60 chars", "kicker": "<=40 chars", "body": ["para1", "para2"], "date": "Month YYYY"}'
+      : task.kind === 'review.scan' ? 'JSON only: {"findings": [{"complaintId": "kebab-id", "hate": "one sentence", "source": "citable research with year", "demand": "one sentence", "bite": "why it bites this exact niche and city"}]} — 8 to 12 findings'
       : 'JSON only: {"audience": "...", "tone": "...", "promise": "...", "cityStory": "..."}';
     const env = buildEnvelope({
-      role: `You are the ${task.kind.startsWith('heading') ? 'headline editor' : task.kind.startsWith('brief') ? 'strategy director' : 'senior copywriter'} of a slow, precise design studio.`,
+      role: `You are the ${task.kind === 'review.scan' ? 'UX researcher reading real user-review corpora' : task.kind.startsWith('heading') ? 'headline editor' : task.kind.startsWith('brief') ? 'strategy director' : 'senior copywriter'} of a slow, precise design studio.`,
       why: task.why,
       rules: task.rules,
       knowledge: task.knowledge,
@@ -695,6 +705,16 @@ export async function runNextTask(ctx: TaskCtx, site: V3Site): Promise<string> {
         interpretation: interpNote, verdict,
         action: verdict === 'ACCEPT' ? 'output frozen into artifacts' : verdict === 'REFINE' ? `re-queued with critique (attempt ${task.attempts}/3)` : 'deferred to deterministic solver',
         precision, at: new Date().toISOString(),
+      });
+    } else if (Date.now() - lastAiFailTurnAt > 60_000) {
+      // honesty: an attempted-but-empty pool is a fact worth seeing — throttled
+      // to one turn a minute so a cold pool doesn't flood the transcript
+      lastAiFailTurnAt = Date.now();
+      ctx.logTurn({
+        id: `${task.id}-fail-${Date.now()}`, taskId: task.id, taskTitle: task.title, provider: 'ai-pool', mode: 'solver',
+        promptTitle: task.why, envelope: '', raw: '',
+        interpretation: 'AI pool returned nothing (missing keys, cooldown, or timeout) — the deterministic solver takes this task',
+        verdict: 'DEFER', action: 'solver floor engaged after an honest AI attempt', precision: 0, at: new Date().toISOString(),
       });
     }
   }
@@ -897,6 +917,12 @@ export async function executeIoTask(ctx: TaskCtx, site: V3Site, task: Task): Pro
       const one = pending[0];
       if (!one) return null; // nothing pending — accept as complete
       slot = one;
+    }
+    // site budget: at the 100MB cap, expansion stops entirely and only the
+    // essential slots (hero, product) of the initial plan may still land
+    const used = ctx.siteBytes?.(site.id) ?? 0;
+    if (used >= SITE_BUDGET_BYTES && (task.kind === 'art.expand' || (slot.role !== 'hero' && slot.role !== 'product'))) {
+      return `${site.brand}: site budget reached (${(used / 1048576).toFixed(0)}MB of 100MB) — ${task.kind === 'art.expand' ? 'gallery expansion stops' : `optional image ${slot.slotId} skipped`}, the site stays complete at its size`;
     }
     const { records, newFetches } = await resolveImages(site.seed, siteNicheKey(site), site.nicheLabel, [slot], site.art.images ?? [], (slotId, bytes) => {
       const file = slot.role === 'gallery' && /^gallery-\d+$/.test(slotId) && (site.art.images ?? []).some((r) => r.slotId === slotId && r.status !== 'gradient')
@@ -1281,6 +1307,10 @@ function sizeCheck(ctx: TaskCtx, site: V3Site, dir: string): string {
   const { bytes, files } = dirSize(dir);
   const rounds = site.art.expansionRounds ?? 0;
   const mb = bytes / 1048576;
+  if (mb >= SITE_BUDGET_BYTES / 1048576) {
+    site.art.sizeReport = { bytes, files, mb: Math.round(mb * 10) / 10, at: new Date().toISOString(), rounds };
+    return `${mb.toFixed(1)}MB — the 100MB site budget is reached: no further expansion, this is the final size`;
+  }
   if (mb < 30 && rounds < 8) {
     site.art.expansionRounds = rounds + 1;
     const extra: Task[] = [];

@@ -18,6 +18,7 @@ import { DEVICE_CLASSES, STAGES, type DesignSpec } from './spec';
 import { LAYOUTS } from './layouts';
 import {
   planInitialTasks, runNextTask, executeIoTask, listSiteFiles, rebuildAllPages, IO_KINDS,
+  SITE_BUDGET_BYTES,
   type Task, type TaskStatus, type SiteArt, type TaskCtx,
 } from './tasks';
 import { rehydrateImage } from './images';
@@ -31,7 +32,10 @@ function DATA_DIR(): string {
 }
 const SITES_DIR = () => path.join(DATA_DIR(), 'sites');
 const STATE_FILE = () => path.join(DATA_DIR(), 'beast-state.json');
-export const CONCURRENCY = 3;
+// The owner's spec (2026-11-14): 512MB instance → 400MB working budget →
+// at most 4 sites, each capped at 100MB on disk (SITE_BUDGET_BYTES in tasks.ts).
+export const CONCURRENCY = 4;
+export const WORKSPACE_BUDGET_BYTES = CONCURRENCY * SITE_BUDGET_BYTES;
 export const OWNER_DEFAULT = 'Beast Studio';
 export const ENGINE_VERSION = 5;
 
@@ -255,10 +259,12 @@ export function commission(state: BeastState): BeastSite {
   return site;
 }
 
-/** Keep the studio floor full: commission new sites until CONCURRENCY slots are taken. */
+/** Keep the floor full: commission new sites until the workspace holds
+ *  CONCURRENCY sites in total — shelf (for-sale) sites occupy slots too, so
+ *  the studio rotates: sell and clear to make room for fresh commissions. */
 export function topUp(state: BeastState): number {
   let added = 0;
-  while (state.sites.filter((s) => s.status === 'in-studio').length < CONCURRENCY) {
+  while (state.sites.length < CONCURRENCY && state.sites.filter((s) => s.status === 'in-studio').length < CONCURRENCY) {
     commission(state);
     added += 1;
   }
@@ -278,6 +284,7 @@ function taskCtx(state: BeastState): TaskCtx {
   return {
     owner: state.owner,
     siteDir,
+    siteBytes: (id: string) => dirBytes(siteDir(id)),
     logTurn: (turn) => {
       state.transcript.unshift(turn);
       if (state.transcript.length > 300) state.transcript.length = 300;
@@ -455,6 +462,17 @@ function dirBytes(dir: string): number {
     }
   } catch { /* unreadable — count as 0 */ }
   return total;
+}
+
+// live workspace bytes for the payload — cached 20s so polling stays cheap
+let wsBytesAt = 0;
+let wsBytesCache = 0;
+export function workspaceBytes(state: BeastState): number {
+  if (Date.now() - wsBytesAt > 20_000) {
+    wsBytesCache = state.sites.reduce((n, s) => n + dirBytes(siteDir(s.id)), 0);
+    wsBytesAt = Date.now();
+  }
+  return wsBytesCache;
 }
 
 export async function zipAll(state: BeastState): Promise<Buffer | null> {

@@ -118,6 +118,16 @@ export function interpretAnswer(kind: string, raw: string): Interpretation<Recor
       }
       return { verdict: 'ACCEPT', artifact: d, reason: 'brief fields complete' };
     }
+    case 'review.scan': {
+      const arr = d.findings;
+      if (!Array.isArray(arr) || arr.length < 5) return { verdict: 'REFINE', reason: 'findings missing or fewer than 5 — the contract demands 8-12' };
+      const clean = arr.filter((f) => !!f && typeof f === 'object'
+        && isStr((f as Record<string, unknown>).hate, 200)
+        && isStr((f as Record<string, unknown>).demand, 200)
+        && isStr((f as Record<string, unknown>).source, 200)).slice(0, 12);
+      if (clean.length < 5) return { verdict: 'REFINE', reason: 'findings lack hate/demand/source text — sources are the law' };
+      return { verdict: 'ACCEPT', artifact: { findings: clean }, reason: `${clean.length} sourced findings accepted` };
+    }
     default:
       // generic contract: any object with a non-empty "text"
       if (isStr(d.text, 400)) return { verdict: 'ACCEPT', artifact: d, reason: 'generic text contract satisfied' };

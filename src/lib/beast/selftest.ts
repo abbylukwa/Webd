@@ -551,6 +551,10 @@ async function testEngine(): Promise<TestResult[]> {
 
     // -- idle truth + refill (replaces day catch-up) --------------------------
     const idle = await engine.runStudio(state);
+    // the workspace-cap law: topUp refills only within 4 total sites — clear
+    // the floor first so the refill is observable in full
+    fs.rmSync(path.join(sandbox, 'sites'), { recursive: true, force: true });
+    state.sites = [];
     const refilled = engine.topUp(state);
     results.push(check('C9', 'C · Engine (sandboxed)', 'Idle truth — a drained ledger costs nothing; topUp refills the floor with fresh commissions',
       idle.executed === 0 && idle.remaining === 0 && refilled === engine.CONCURRENCY &&
@@ -600,6 +604,35 @@ async function testEngine(): Promise<TestResult[]> {
     results.push(check('C14', 'C · Engine (sandboxed)', 'Vault adoption — a cold empty studio adopts the vaulted ledger; foreign versions rejected',
       adopted && fresh.cycle === 7 && fresh.sites.length === 1 && !wrongVersion,
       `empty studio → cycle ${fresh.cycle} with ${fresh.sites.length} site(s) adopted from ${VAULT_REPO} · v2 payload rejected`));
+
+    // -- workspace cap: at most 4 sites total (owner's law: 4 × 100MB = 400MB) --------
+    fs.rmSync(path.join(sandbox, 'sites'), { recursive: true, force: true });
+    state.sites = [];
+    const capped = engine.topUp(state);
+    const capped2 = engine.topUp(state);
+    results.push(check('C16', 'C · Engine (sandboxed)', 'Workspace cap — at most 4 sites total (studio + shelf); a second top-up adds nothing',
+      capped === engine.CONCURRENCY && capped2 === 0 && state.sites.length === engine.CONCURRENCY,
+      `topUp → ${capped} commissions (${state.sites.length} total), second topUp → +${capped2}`));
+
+    // -- site budget: the 100MB per-site cap stops expansion honestly -----------------
+    const budgetSite = state.sites[0];
+    const bigFile = path.join(sandbox, 'sites', budgetSite.id, 'assets', 'hero.jpg');
+    fs.mkdirSync(path.dirname(bigFile), { recursive: true });
+    fs.writeFileSync(bigFile, '');
+    fs.truncateSync(bigFile, 101 * 1024 * 1024); // sparse — instant, stats as 101MB
+    budgetSite.tasks.unshift({ id: 'budget-probe-1', siteId: budgetSite.id, kind: 'art.expand', title: 'Art expansion — budget probe', why: 'verify the cap', rules: [], knowledge: [], status: 'queued', attempts: 0, precision: 0, slot: 1 } as never);
+    const budgetDrain = await engine.drainExclusive(state, { maxTasks: 2, maxMs: 20_000 });
+    results.push(check('C17', 'C · Engine (sandboxed)', 'Site budget — at 100MB on disk the image tasks refuse to fetch and say so',
+      budgetDrain.jobs.some((j) => j.includes('budget reached')),
+      budgetDrain.jobs.find((j) => j.includes('budget reached'))?.slice(0, 90) ?? 'no budget note'));
+
+    // -- reasoner chain: sourced findings → demands → personas on every site ----------
+    await engine.drainExclusive(state, { maxTasks: 60, maxMs: 45_000 });
+    const probeArt = state.sites[0].art ?? {};
+    const findings = probeArt.findings ?? [];
+    results.push(check('C18', 'C · Engine (sandboxed)', 'Reasoner chain — every commissioned site carries sourced findings → demands → personas',
+      findings.length >= 20 && (probeArt.demands?.length ?? 0) >= 10 && (probeArt.personas?.length ?? 0) >= 1 && findings.every((f) => !!f.source),
+      `${findings.length} findings (all sourced) → ${probeArt.demands?.length ?? 0} demands → ${probeArt.personas?.length ?? 0} personas`));
   } finally {
     if (prevDir === undefined) delete process.env.BEAST_DATA_DIR;
     else process.env.BEAST_DATA_DIR = prevDir;

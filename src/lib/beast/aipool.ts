@@ -59,6 +59,29 @@ const HEALTHY_TTL = 1000 * 60 * 60 * 6;
 
 const healthLog = new Map<string, { status: string; at: number }>();
 
+// honest diagnostics: the UI shows why the pool is (or isn't) answering
+let lastPoolError: { provider: string; reason: string; at: number } | null = null;
+
+export function poolStatus(vault: VaultKey[]): { keys: number; ready: number; cooling: number; lastError: string | null } {
+  const now = Date.now();
+  let ready = 0;
+  let cooling = 0;
+  const seen = new Set<string>();
+  for (const k of vault) {
+    const p = detectProvider(k.key);
+    if (seen.has(p)) continue;
+    seen.add(p);
+    if ((cooldowns.get(p) ?? 0) > now) cooling += 1;
+    else ready += 1;
+  }
+  return {
+    keys: vault.length,
+    ready,
+    cooling,
+    lastError: lastPoolError ? `${lastPoolError.provider}: ${lastPoolError.reason}` : null,
+  };
+}
+
 export function vaultViews(vault: VaultKey[]): VaultKeyView[] {
   const now = Date.now();
   return vault.map((k) => {
@@ -177,7 +200,8 @@ export async function callAiPool(
       revive(provider);
       healthLog.set(k.id, { status: "healthy", at: Date.now() });
       return { text: text.trim(), provider };
-    } catch {
+    } catch (e) {
+      lastPoolError = { provider, reason: e instanceof Error ? e.message : 'request failed', at: Date.now() };
       coolDown(provider);
     }
   }

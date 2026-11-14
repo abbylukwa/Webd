@@ -17,8 +17,15 @@ import { LIBRARY } from '@/lib/beast/knowledge';
 import {
   Download, Trash2, Eye, Play, Plus, Package, Github, Keyboard, Ruler, Palette as PaletteIcon,
   Layers, Infinity as InfinityIcon, BookOpen, ShieldCheck, MonitorSmartphone, FlaskConical, Gauge,
-  Sparkles, Braces, CheckCircle2, Clock, Activity, ChevronDown,
+  Sparkles, Braces, CheckCircle2, Clock, Activity, ChevronDown, ExternalLink,
 } from 'lucide-react';
+
+/** repo html_url → its GitHub Pages site url (where the site is actually published) */
+function pagesUrlOf(git?: { repo?: string; url?: string } | null): string | null {
+  if (!git?.url) return null;
+  const m = git.url.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)/);
+  return m ? `https://${m[1]}.github.io/${m[2]}/` : null;
+}
 
 /* ---------- types (mirror of API) ---------- */
 type Device = {
@@ -39,6 +46,7 @@ type Site = {
   palette: { name: string; harmony: string; theme: string; swatches: string[] };
   qa: null | { contrast: { pair: string; ratio: number; pass: boolean }[]; breakpoints: string[]; crap: string[] };
   copyright: string; log: { at: string; entry: string }[];
+  git?: { repo: string; url: string; pushedAt: string } | null;
   tasks: Task[]; progress: number;
   taskCounts: { total: number; accepted: number; queued: number; deferred: number };
 };
@@ -47,7 +55,8 @@ type Turn = { id: string; taskId: string; taskTitle: string; provider: string; m
 type Status = {
   version: number; cycle: number; startedAt: string; working: boolean;
   owner: string; concurrency: number; stages: Stage[]; devices: Device[];
-  github: { configured: boolean }; ai: { enabled: boolean };
+  github: { configured: boolean }; ai: { enabled: boolean; pool?: { keys: number; ready: number; cooling: number; lastError: string | null } };
+  workspace?: { bytes: number; budget: number; sites: number; maxSites: number };
   sites: Site[]; log: LogEvent[]; transcript: Turn[];
 };
 type TestResult = { id: string; group: string; feature: string; pass: boolean; detail: string };
@@ -330,6 +339,9 @@ export default function BeastPage() {
                 <Gauge className="h-4 w-4" /> <span className="hidden md:inline">Mission Control</span>
               </Button>
             </a>
+            <Badge variant="outline" className="hidden border-zinc-700 font-mono text-[10px] text-zinc-400 md:inline-flex" title="live bytes on disk vs the 400MB workspace budget (4 sites × 100MB)">
+              {((status?.workspace?.bytes ?? 0) / 1048576).toFixed(0)}/{((status?.workspace?.budget ?? 0) / 1048576).toFixed(0)}MB · {status?.workspace?.sites ?? 0}/{status?.workspace?.maxSites ?? 4} sites
+            </Badge>
             <Button size="sm" className="bg-lime-300 font-bold text-zinc-950 hover:bg-lime-200" disabled={!shelf.length} onClick={() => { window.location.href = '/api/beast/zip-all'; toast({ title: 'Workspace packed — download started' }); }}>
               <Package className="h-4 w-4" /> <span className="hidden md:inline">Download all</span>
             </Button>
@@ -504,6 +516,18 @@ export default function BeastPage() {
                       <Separator className="bg-zinc-800" />
                       <p className="font-mono text-[11px] leading-relaxed text-zinc-500">{s.copyright}</p>
                       <div className="mt-auto flex gap-2">
+                        {(() => {
+                          const web = pagesUrlOf(s.git);
+                          return web ? (
+                            <a href={web} target="_blank" rel="noreferrer" title="open the published site" className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-zinc-700 px-2 text-sm font-medium text-zinc-200 hover:bg-zinc-800">
+                              <ExternalLink className="h-4 w-4" /> Web
+                            </a>
+                          ) : (
+                            <Button size="sm" variant="outline" disabled title="not published yet — the Web link appears the moment the site is pushed to GitHub" className="shrink-0 border-zinc-800 text-zinc-600">
+                              <ExternalLink className="h-4 w-4" /> Web
+                            </Button>
+                          );
+                        })()}
                         <Button size="sm" className="flex-1 bg-lime-300 font-bold text-zinc-950 hover:bg-lime-200" onClick={() => { setPreviewSite(s); setDeviceIdx(2); }}>
                           <Eye className="h-4 w-4" /> Preview
                         </Button>
@@ -528,8 +552,15 @@ export default function BeastPage() {
                 <CardTitle className="flex flex-wrap items-center gap-2 text-lg">
                   <Sparkles className="h-5 w-5 text-lime-300" /> AI answers — raw response, meaning, next action
                   <Badge variant="outline" className={status?.ai.enabled ? 'border-lime-300/40 font-mono text-lime-300' : 'border-zinc-700 font-mono text-zinc-400'}>
-                    {status?.ai.enabled ? 'AI enabled' : 'solver floor — no keys configured'}
+                    {status?.ai.enabled
+                      ? `AI enabled · pool ${status.ai.pool ? `${status.ai.pool.ready} ready${status.ai.pool.cooling ? `, ${status.ai.pool.cooling} cooling` : ''}` : ''}`
+                      : 'solver floor — no keys configured'}
                   </Badge>
+                  {status?.ai.pool?.lastError && (
+                    <Badge variant="outline" className="border-amber-300/40 font-mono text-[10px] text-amber-300/90" title={status.ai.pool.lastError}>
+                      last pool error: {status.ai.pool.lastError.slice(0, 40)}
+                    </Badge>
+                  )}
                 </CardTitle>
                 <p className="text-sm text-zinc-400">
                   Every answer the studio receives, exactly as it arrived, with what it means and what happened next. Nothing enters a site without passing its gates.

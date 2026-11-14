@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   loadState, bootStudio, commission, saveState, drainExclusive, isWorking, clearWorkspace, setOwner,
-  runTaskNow, setValues, pushToGithub, adoptVaultState,
+  runTaskNow, setValues, pushToGithub, adoptVaultState, workspaceBytes, WORKSPACE_BUDGET_BYTES,
   STAGES, DEVICE_CLASSES, CONCURRENCY, ENGINE_VERSION,
 } from '@/lib/beast/engine';
 import { githubConfigured } from '@/lib/beast/storage';
-import { aiEnabled } from '@/lib/beast/ai';
+import { aiEnabled, vaultKeys } from '@/lib/beast/ai';
+import { poolStatus } from '@/lib/beast/aipool';
 import { LAYOUTS } from '@/lib/beast/layouts';
 import { layoutVariety } from '@/lib/beast/reasoner';
 
@@ -24,7 +25,13 @@ function publicState(state: ReturnType<typeof loadState>) {
     devices: DEVICE_CLASSES,
     layoutCount: LAYOUTS.length,
     github: { configured: githubConfigured() },
-    ai: { enabled: aiEnabled() },
+    ai: { enabled: aiEnabled(), pool: poolStatus(vaultKeys()) },
+    workspace: {
+      bytes: workspaceBytes(state),
+      budget: WORKSPACE_BUDGET_BYTES,
+      sites: state.sites.length,
+      maxSites: CONCURRENCY,
+    },
     sites: state.sites.map((s) => {
       const accepted = s.tasks.filter((t) => t.status === 'accepted').length;
       const total = s.tasks.length;
