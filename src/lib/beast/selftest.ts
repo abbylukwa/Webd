@@ -28,6 +28,7 @@ import { MAX_PHONES, MAX_PRODUCTS, validateValues, SOCIAL_PLATFORMS, type SiteVa
 import { attributionMarkdown, nicheImageQueries, type ImageRecord } from './images';
 import { buildEnvelope, interpretAnswer } from './ai';
 import { detectProvider, providerBase, providerModel, type VaultKey } from './aipool';
+import { siteFileResponse } from './serve';
 import { siteRepoName, VAULT_REPO } from './storage';
 import { planPagesFor, expandAfterPlan, planInitialTasks } from './tasks';
 import { COMPLAINT_CORPUS, scanComplaints, findingsToDemands, rulesForKind, composePersonas, reasonDevice, assignPageLayouts, layoutVariety, type PageLayoutAssignment } from './reasoner';
@@ -463,6 +464,25 @@ async function testEngine(): Promise<TestResult[]> {
     const qaOk = !!qa && qa.contrast.every((c) => c.pass) && qa.breakpoints.length === 4 && qa.crap.length >= 4;
     results.push(check('C2', 'C · Engine (sandboxed)', 'QA record — CRAP audit + 4 breakpoints + contrast pairs stored per site',
       qaOk, qa ? `contrast ${qa.contrast.filter((c) => c.pass).length}/${qa.contrast.length} pass · breakpoints ${qa.breakpoints.length}/4 · ${qa.crap.length} CRAP lines` : 'no QA record'));
+
+    // -- preview serving law (v5.4) ------------------------------------------
+    // HTML served over the API gets <base> injected at response time so
+    // relative nav/asset links resolve against the site path; the ZIP and the
+    // disk copies stay pure-relative (portable). Pages also resolve by path.
+    let serveOk = false;
+    let serveDetail = 'no shipped site';
+    if (shippedNow) {
+      const home = siteFileResponse(shippedNow.id, 'index.html');
+      const byPath = siteFileResponse(shippedNow.id, 'about.html');
+      const served = new TextDecoder().decode(home.body);
+      const baseTag = `<base href="/api/beast/site/${shippedNow.id}/"/>`;
+      const baseInjected = served.includes(baseTag);
+      const navRelative = !/href="\/(?!\/)/.test(served.replace(baseTag, ''));
+      serveOk = home.status === 200 && baseInjected && byPath.status === 200 && navRelative;
+      serveDetail = `home ${home.status} · about.html by path ${byPath.status} · <base> injected ${baseInjected} · nav stays relative ${navRelative}`;
+    }
+    results.push(check('C15', 'C · Engine (sandboxed)', 'Preview serving — HTML gets <base> at serve time only; pages+assets resolve by path; ZIP stays pure relative',
+      serveOk, serveDetail));
 
     // -- values caps are law ---------------------------------------------------
     const bloated = {

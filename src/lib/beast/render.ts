@@ -1332,7 +1332,7 @@ a{display:inline-block;background:var(--accent);color:var(--bg);font-weight:700;
 <main>
   <h1>Wrong turn.</h1>
   <p>This page does not exist — but ${brand} in ${city} is exactly where you left it. The <a href="sitemap.html" style="color:var(--accent);font-weight:700">directory of every file</a> can help.</p>
-  <a href="/">Back to ${brand}</a>
+  <a href="index.html">Back to ${brand}</a>
   <p style="margin-top:34px;font-size:.8rem">${copyright}</p>
 </main>
 </body>
